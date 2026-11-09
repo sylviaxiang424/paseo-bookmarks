@@ -1,0 +1,44 @@
+{
+  "name": "paseo-bookmarks",
+  "private": true,
+  "version": "0.1.0",
+  "files": [
+    "paseo-plugin.json",
+    "OVERVIEW.md",
+    "OVERVIEW.*.md",
+    "README*.md",
+    "assets/",
+    "index.client.ts",
+    "index.client.tsx",
+    "index.server.ts",
+    "index.server.tsx",
+    "client/",
+    "server/",
+    "shared/"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "devDependencies": {
+    "@getpaseo/plugin": "0.15.3",
+    "@tanstack/react-query": "^5.90.11",
+    "@types/node": "^26.6.6",
+    "@types/react": "~19.2.0",
+    "esbuild": "^0.28.2",
+    "happy-dom": "^21.0.4",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "react-test-renderer": "^19.1.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "zod": "^4.4.3"
+  },
+  "description": "Bookmark questions and answers in Paseo, with sidebar excerpts, timeline marks and optional fork inheritance.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sylviaxiang424/paseo-bookmarks.git"
+  },
+  "homepage": "https://github.com/sylviaxiang424/paseo-bookmarks#readme",
+  "bugs": "https://github.com/sylviaxiang424/paseo-bookmarks/issues"
+}

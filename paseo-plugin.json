@@ -1,0 +1,15 @@
+{
+  "id": "paseo-bookmarks",
+  "name": "Conversation bookmarks",
+  "description": "Bookmark questions and answers, navigate from a sidebar or timeline, and optionally inherit bookmarks when forking.",
+  "media": [],
+  "requirements": {
+    "paseo": ">=0.15.0 <0.16.0"
+  },
+  "translations": {
+    "zh-CN": {
+      "name": "对话书签",
+      "description": "收藏问题和回答，在右侧查看摘要、跳转或移除；分叉时可选择继承原对话书签。"
+    }
+  }
+}
