@@ -1,3 +1,4 @@
+import { createTestI18n } from "./host-translations";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Window } from "happy-dom";
@@ -73,7 +74,8 @@ test("desktop adapter adds and removes bookmarks, marks the rail, jumps to unloa
   (scroll as any).__reactFiber$test = { memoizedProps: context, child: { memoizedProps: { onJumpToPrompt: (seq: number) => { jumpedSeq = seq; if (seq === 9 || seq === 10) addRow(`message-${seq}`, seq); } } } };
   let saved: Bookmark[] = [], forks: any[] = [], selectedOwner = "";
   let adapter: any;
-  adapter = compiled.exports.createWebAdapter({ accepts: (ctx: any) => ctx.serverId === "host-a", context(value: any) { selectedOwner = value.ownerId; }, fork(value: any) { forks.push(value); }, bookmarks: () => saved, title: () => "原对话", error(message: string) { throw new Error(message); }, prompt(entries: Bookmark[]) { void adapter.jump(entries[0]); },
+  const i18n = createTestI18n();
+  adapter = compiled.exports.createWebAdapter({ t: i18n.t, accepts: (ctx: any) => ctx.serverId === "host-a", context(value: any) { selectedOwner = value.ownerId; }, fork(value: any) { forks.push(value); }, bookmarks: () => saved, title: () => "原对话", error(message: string) { throw new Error(message); }, prompt(entries: Bookmark[]) { void adapter.jump(entries[0]); },
     async toggle(_: unknown, target: BookmarkInput) {
       saved = saved.length ? [] : [{ ...target, id: bookmarkId(target), createdAt: new Date().toISOString() }];
       adapter.refresh();
@@ -94,6 +96,12 @@ test("desktop adapter adds and removes bookmarks, marks the rail, jumps to unloa
     assert.equal(tick.children.length, 1, "bookmarks decorate the native pill without adding a second marker");
     assert.equal(tick.textContent, "");
     assert.match(tick.getAttribute("title")!, /回答.*回答 2/, "the summary remains available on hover");
+    i18n.setLocale("en"); adapter.refresh(); await wait();
+    assert.equal(button.getAttribute("aria-label"), "Remove bookmark");
+    assert.equal(questionButton.getAttribute("aria-label"), "Add bookmark");
+    assert.match(tick.getAttribute("title")!, /^Answer · 回答 2/);
+    assert.equal(saved[0].summary, "回答 2", "switching language preserves the original excerpt");
+    i18n.setLocale("zh-CN"); adapter.refresh(); await wait();
     tick.click(); await wait();
     assert.equal(jumpedSeq, 0, "mounted messages do not depend on the outline"); assert.equal(scrolledTo, "message-2");
     const highlight = row.querySelector(".pb-message-highlight")!;
@@ -131,7 +139,7 @@ test("desktop adapter adds and removes bookmarks, marks the rail, jumps to unloa
     section.appendChild(secondInput); adapter.refresh(); await wait();
     assert.equal(selectedOwner, "agent-c", "split view follows the focused pane instead of DOM order");
   } finally {
-    adapter.dispose();
+    adapter.dispose(); i18n.runtime.dispose();
     assert.equal(window.document.querySelector(".pb-message-action"), null);
     assert.equal(window.document.querySelector(".pb-message-highlight"), null);
     assert.equal(row.style.position, "", "the host row's original positioning is restored");

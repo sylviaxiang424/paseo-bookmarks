@@ -29,6 +29,20 @@ export type Bookmark = z.infer<typeof bookmarkSchema>;
 export type BookmarkSession = z.infer<typeof sessionSchema>;
 export const emptySession = (): BookmarkSession => ({ bookmarks: [] });
 
+export const bookmarkErrorKeys = {
+  BOOKMARKS_READ_FAILED: "errors.readFailed",
+  BOOKMARKS_SELF_INHERITANCE: "errors.selfInheritance",
+  BOOKMARKS_OPERATION_FAILED: "errors.operationFailed",
+  BOOKMARKS_SAVE_FAILED: "errors.saveFailed",
+  BOOKMARKS_SOURCE_UNAVAILABLE: "errors.sourceUnavailable",
+  BOOKMARKS_SOURCE_READ_FAILED: "errors.sourceReadFailed",
+  BOOKMARKS_SOURCE_READ_INTERRUPTED: "errors.sourceReadInterrupted",
+  BOOKMARKS_MESSAGE_UNAVAILABLE: "errors.messageUnavailable",
+  BOOKMARKS_MESSAGE_TYPE_CHANGED: "errors.messageTypeChanged",
+  BOOKMARKS_OPEN_FROM_PANEL: "errors.openFromPanel",
+  BOOKMARKS_LOCATION_PENDING: "errors.locationPending",
+} as const;
+
 export const listBookmarks = defineRpc({
   name: "bookmarks.list", input: z.object({ ownerId: ownerSchema }), output: sessionSchema,
 });

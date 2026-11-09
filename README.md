@@ -15,7 +15,7 @@ Save questions and answers in Paseo, then find them from a right-hand bookmark p
 
 ## Install
 
-Requires Paseo **0.15.x** on desktop or web. The plugin interface currently uses Simplified Chinese. Native mobile clients are not supported.
+Requires Paseo **0.15.x** on desktop or web. The interface follows Paseo’s language setting, including “System”. English and Simplified Chinese are supported, with English as the fallback. Native mobile clients are not supported.
 
 Install directly from this repository:
 

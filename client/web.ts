@@ -1,3 +1,4 @@
+import type { Translate } from "./messages";
 import { Platform } from "react-native";
 import { readableText, summarize, type Bookmark, type BookmarkInput } from "../shared/bookmarks";
 
@@ -58,6 +59,7 @@ export type WebCallbacks = {
   toggle(context: ChatContext, bookmark: BookmarkInput): Promise<void>;
   prompt(bookmarks: readonly Bookmark[]): void;
   title(agentId: string): string;
+  t: Translate;
   error(message: string): void;
 };
 const bag = (value: unknown): Bag => value !== null && typeof value === "object" ? value as Bag : {};
@@ -303,7 +305,7 @@ export function createWebAdapter(callbacks: WebCallbacks) {
           icon.appendChild(path); button.appendChild(icon); toolbar.appendChild(button);
           const state = { toolbar, button, icon, column: undefined as ElementLike | undefined, position: row.style.position, target, context: current };
           action = state; actions.set(row, state);
-          button.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); void callbacks.toggle(state.context, state.target).catch(() => callbacks.error("书签保存失败，请重试。")); });
+          button.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); void callbacks.toggle(state.context, state.target).catch(() => callbacks.error("BOOKMARKS_SAVE_FAILED")); });
           if (!row.style.position) row.style.position = "relative";
           row.appendChild(toolbar);
         }
@@ -329,7 +331,7 @@ export function createWebAdapter(callbacks: WebCallbacks) {
           action.toolbar.style.setProperty("visibility", "visible");
         } else action.toolbar.style.setProperty("visibility", "hidden");
         const selected = saved.some((entry) => entry.sourceAgentId === target.sourceAgentId && (entry.messageId === target.messageId || entry.aliases.some((id) => target.aliases.includes(id))));
-        const label = selected ? "移除书签" : "添加书签";
+        const label = callbacks.t(selected ? "remove" : "add");
         if (action.button.getAttribute("aria-label") !== label) {
           action.button.setAttribute("aria-label", label); action.button.setAttribute("title", label);
           action.button.setAttribute("aria-pressed", String(selected)); action.icon.setAttribute("fill", selected ? "currentColor" : "none");
@@ -346,7 +348,7 @@ export function createWebAdapter(callbacks: WebCallbacks) {
           tick.addEventListener("click", value.click, true); ticks.set(tick, value); state = value;
         }
         state.entries = entries;
-        const title = entries.map((entry) => `${entry.role === "user" ? "问题" : "回答"} · ${entry.summary.slice(0, 120)}`).join("\n");
+        const title = entries.map((entry) => `${callbacks.t(entry.role === "user" ? "question" : "answer")} · ${entry.summary.slice(0, 120)}`).join("\n");
         tick.setAttribute("data-pb-count", String(entries.length));
         if (tick.getAttribute("title") !== title) tick.setAttribute("title", title);
       }

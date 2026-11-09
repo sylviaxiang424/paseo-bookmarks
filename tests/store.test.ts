@@ -69,7 +69,7 @@ test("inherited snapshots remain readable when their source list is emptied", ()
 
 test("a corrupt file is preserved instead of silently replaced", () => fixture(async (store, file) => {
   await writeFile(file, "{broken", "utf8");
-  await assert.rejects(store.save("agent-a", target()), /保留原文件/);
+  await assert.rejects(store.save("agent-a", target()), /BOOKMARKS_READ_FAILED/);
   assert.equal(await readFile(file, "utf8"), "{broken");
 }));
 

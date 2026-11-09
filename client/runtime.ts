@@ -1,6 +1,7 @@
 import type { PluginClientContext, PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
 import type { QueryClient } from "@tanstack/react-query";
 import { bookmarkId, bindDraft, emptySession, inheritBookmarks, listBookmarks, removeBookmark, saveBookmark, summarize, type Bookmark, type BookmarkInput, type BookmarkSession } from "../shared/bookmarks";
+import { messages, type Translate } from "./messages";
 import { createWebAdapter, type ChatContext, type ForkSource } from "./web";
 
 type Navigation = PluginWorkspacePanelProps["navigation"];
@@ -41,8 +42,10 @@ export class BookmarkRuntime {
     this.snapshot = { ...this.snapshot, ...update };
     for (const listener of this.listeners) listener();
   }
-  setTitles(entries: readonly { id: string; title?: string | null }[]) { for (const entry of entries) this.titles.set(entry.id, entry.title || "未命名对话"); }
-  title = (agentId: string) => this.titles.get(agentId) ?? "原对话";
+  readonly t: Translate = (key, ...args) => this.client.i18n.t(messages, key, ...args);
+  refreshLanguage() { this.adapter?.refresh(); }
+  setTitles(entries: readonly { id: string; title?: string | null }[]) { for (const entry of entries) this.titles.set(entry.id, entry.title || ""); }
+  title = (agentId: string) => this.titles.get(agentId) || this.t(this.titles.has(agentId) ? "untitled" : "sourceConversation");
   attach(cache: QueryClient, hostId: string) {
     this.cache = cache; this.hostId = hostId;
     if (!this.started && !this.stopped) {
@@ -54,6 +57,7 @@ export class BookmarkRuntime {
         bookmarks: (context) => context.serverId === this.hostId ? this.sessions.get(context.ownerId)?.bookmarks ?? [] : [],
         toggle: (context, target) => this.toggle(context, target),
         title: this.title,
+        t: this.t,
         prompt: (entries) => { if (entries.length === 1) void this.jump(entries[0]); else this.patch({ promptChoice: entries }); },
         error: (error) => this.patch({ error }),
       });
@@ -89,7 +93,7 @@ export class BookmarkRuntime {
     if (!this.stopped) this.publish(ownerId, session);
     return session;
   }
-  private fail(error: unknown) { this.patch({ loading: false, error: error instanceof Error ? error.message : "操作失败，请重试。" }); }
+  private fail(error: unknown) { this.patch({ loading: false, error: error instanceof Error ? error.message : "BOOKMARKS_OPERATION_FAILED" }); }
   async toggle(context: ChatContext, target: BookmarkInput) {
     if (context.serverId !== this.hostId || context.agentId !== target.sourceAgentId) return;
     const pendingKey = `${context.ownerId}:${bookmarkId(target)}`;
@@ -151,9 +155,9 @@ export class BookmarkRuntime {
   private async resolveTarget(bookmark: Bookmark): Promise<Bookmark> {
     const handle = this.client.paseo.agents.ref(bookmark.sourceAgentId);
     const source = await handle.refresh();
-    if (!source) throw new Error("原对话已删除或不可访问，无法跳转。书签摘要仍然保留。");
+    if (!source) throw new Error("BOOKMARKS_SOURCE_UNAVAILABLE");
     let page = await handle.timeline.refetch({ direction: "tail", limit: 100 });
-    if (page.error) throw new Error("暂时无法读取原对话，请检查主机连接后重试。");
+    if (page.error) throw new Error("BOOKMARKS_SOURCE_READ_FAILED");
     const matches = (entry: typeof page.entries[number]) => {
       const item = entry.item;
       if (item.type !== (bookmark.role === "user" ? "user_message" : "assistant_message")) return false;
@@ -163,19 +167,19 @@ export class BookmarkRuntime {
     let target = page.entries.find(matches);
     if (!target && page.epoch === bookmark.epoch) {
       page = await handle.timeline.refetch({ direction: "after", cursor: { epoch: page.epoch, seq: Math.max(0, bookmark.seq - 1) }, limit: 5 });
-      if (page.error) throw new Error("原对话读取中断，请稍后重试。");
+      if (page.error) throw new Error("BOOKMARKS_SOURCE_READ_INTERRUPTED");
       target = page.entries.find(matches);
     }
     // Rewinds/replacements invalidate old seqs. Resolve stable message identity,
     // and never jump to a different message that reused an old seq.
     for (let count = 0; !target && page.hasOlder && page.startCursor && count < 80; count++) {
       page = await handle.timeline.refetch({ direction: "before", cursor: page.startCursor, limit: 100 });
-      if (page.error) throw new Error("原对话读取中断，请稍后重试。");
+      if (page.error) throw new Error("BOOKMARKS_SOURCE_READ_INTERRUPTED");
       target = page.entries.find(matches);
     }
-    if (!target) throw new Error("原消息已移除或当前无法定位，书签摘要仍然保留。");
+    if (!target) throw new Error("BOOKMARKS_MESSAGE_UNAVAILABLE");
     const item = target.item;
-    if (item.type !== "user_message" && item.type !== "assistant_message") throw new Error("原消息类型已变化，无法定位。");
+    if (item.type !== "user_message" && item.type !== "assistant_message") throw new Error("BOOKMARKS_MESSAGE_TYPE_CHANGED");
     const ids = [item.messageId, item.type === "user_message" ? item.clientMessageId : undefined, bookmark.messageId, ...bookmark.aliases].filter((id): id is string => Boolean(id));
     return { ...bookmark, messageId: item.messageId ?? bookmark.messageId, aliases: [...new Set(ids)].slice(0, 8), seq: target.seqStart, epoch: page.epoch };
   }
@@ -190,11 +194,11 @@ export class BookmarkRuntime {
         if (this.stopped) return;
         if (this.snapshot.active?.agentId !== bookmark.sourceAgentId || attempt > 0) {
           if (navigation) navigation.openAgent({ agentId: bookmark.sourceAgentId, serverId: this.hostId });
-          else if (this.snapshot.active?.agentId !== bookmark.sourceAgentId) throw new Error("请从右侧书签面板点击，打开原对话。");
+          else if (this.snapshot.active?.agentId !== bookmark.sourceAgentId) throw new Error("BOOKMARKS_OPEN_FROM_PANEL");
         }
         if (await this.adapter?.jump(target)) return;
       }
-      if (!this.stopped) throw new Error("原消息仍在历史中，但页面尚未完成定位。已自动重试，请稍后再次点击书签。");
+      if (!this.stopped) throw new Error("BOOKMARKS_LOCATION_PENDING");
     } catch (error) { this.fail(error); }
     finally { this.patch({ jumping: null }); }
   }

@@ -23,7 +23,7 @@ export class BookmarkStore {
     }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, sessions: Object.create(null) };
-      throw new Error("书签数据读取失败，已保留原文件。请检查插件日志。");
+      throw new Error("BOOKMARKS_READ_FAILED");
     }
   }
   private async write(data: FileState) {
@@ -64,7 +64,7 @@ export class BookmarkStore {
   inherit(ownerId: string, sourceAgentId: string, accepted: boolean) {
     return this.transact(ownerId, (session, data) => {
       if (session.inheritance) return;
-      if (ownerId === sourceAgentId) throw new Error("不能从当前对话继承书签。");
+      if (ownerId === sourceAgentId) throw new Error("BOOKMARKS_SELF_INHERITANCE");
       session.inheritance = { sourceAgentId, accepted };
       if (!accepted) return;
       for (const source of data.sessions[sourceAgentId]?.bookmarks ?? []) {

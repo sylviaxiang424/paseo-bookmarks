@@ -1,3 +1,4 @@
+import { createTestI18n } from "./host-translations";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { build } from "esbuild";
@@ -41,9 +42,10 @@ async function fixture(run: (host: any) => Promise<void>) {
     row.scrollIntoView = () => { scrolled++; top = 40; };
     scroll.append(row); return row;
   };
-  const adapter = factory.createWebAdapter({ accepts: (ctx: any) => ctx.serverId === "host-a", context() {}, bookmarks: () => [], fork() {}, title: () => "原对话", toggle: async () => {}, prompt() {}, error(message: string) { throw new Error(message); } });
+  const i18n = createTestI18n();
+  const adapter = factory.createWebAdapter({ t: i18n.t, accepts: (ctx: any) => ctx.serverId === "host-a", context() {}, bookmarks: () => [], fork() {}, title: () => "原对话", toggle: async () => {}, prompt() {}, error(message: string) { throw new Error(message); } });
   try { await run({ adapter, createScroll, addRow, later, window, scrolled: () => scrolled }); }
-  finally { adapter.dispose(); for (const timer of scheduled) clearTimeout(timer); Object.assign(globalThis, previous); await window.happyDOM.close(); }
+  finally { adapter.dispose(); i18n.runtime.dispose(); for (const timer of scheduled) clearTimeout(timer); Object.assign(globalThis, previous); await window.happyDOM.close(); }
 }
 
 test("a mounted message locates without relying on the outline's readiness", () => fixture(async ({ adapter, createScroll, addRow, scrolled }) => {

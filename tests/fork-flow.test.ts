@@ -1,3 +1,4 @@
+import { createTestI18n, translationModule } from "./host-translations";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -11,6 +12,7 @@ import { BookmarkStore } from "../server/store";
 
 test("fork dialog choice binds to the created chat; closed sources reopen and deleted sources keep the summary", async () => {
   const built = await build({ entryPoints: ["client/runtime.ts"], bundle: true, platform: "node", format: "cjs", write: false, plugins: [{ name: "host", setup(builder) {
+    builder.onResolve({ filter: /^@getpaseo\/plugin\/client$/ }, () => ({ path: translationModule, external: true }));
     builder.onResolve({ filter: /^react-native$/ }, () => ({ path: "host", namespace: "stub" }));
     builder.onLoad({ filter: /.*/, namespace: "stub" }, () => ({ contents: 'export const Platform = { OS: "web" };' }));
   } }], logLevel: "silent" });
@@ -39,7 +41,9 @@ test("fork dialog choice binds to the created chat; closed sources reopen and de
   row.scrollIntoView = () => { highlighted = true; };
   (scroll as any).__reactFiber$test = { memoizedProps: context("agent-a"), child: { memoizedProps: { onJumpToPrompt: () => { scroll.appendChild(row); } } } };
   window.document.body.append(input, scroll);
+  const i18n = createTestI18n();
   const client = {
+    i18n: i18n.runtime,
     rpc: async (contract: { name: string }, args: any) => {
       switch (contract.name) {
         case "bookmarks.list": return store.list(args.ownerId);
@@ -95,7 +99,7 @@ test("fork dialog choice binds to the created chat; closed sources reopen and de
     runtime.adapter.jump = originalJump; sourceSeq = 2; sourceEpoch = "epoch-a";
     sourceExists = false;
     await runtime.jump(inherited);
-    assert.match(runtime.getSnapshot().error, /原对话已删除或不可访问/);
+    assert.match(runtime.getSnapshot().error, /BOOKMARKS_SOURCE_UNAVAILABLE/);
     assert.equal((await store.list("agent-b")).bookmarks[0].summary, "回答 2");
     await runtime.remove("agent-b", inherited);
     assert.equal((await store.list("agent-b")).bookmarks.length, 0);
@@ -112,7 +116,7 @@ test("fork dialog choice binds to the created chat; closed sources reopen and de
     assert.equal((await store.list("agent-c")).bookmarks.length, 1);
     assert.equal((await store.list("draft:draft-c")).bookmarks.length, 0);
   } finally {
-    runtime.dispose(); cache.clear();
+    runtime.dispose(); i18n.runtime.dispose(); cache.clear();
     (globalThis as any).document = previousDocument; (globalThis as any).MutationObserver = previousObserver;
     await window.happyDOM.close(); await rm(directory, { recursive: true, force: true });
   }

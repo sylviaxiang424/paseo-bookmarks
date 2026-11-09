@@ -1,21 +1,22 @@
-import type { PluginClientContext, PluginButtonIconProps, PluginButtonRegistration } from "@getpaseo/plugin/client";
+import type { PluginClientContext, PluginButtonIconProps, PluginButtonRegistration, PluginText } from "@getpaseo/plugin/client";
+import { messages } from "./client/messages";
 import { BookmarkRuntime } from "./client/runtime";
 import { BookmarkBridge, BookmarkPanel } from "./client/panel";
 
 export default function contribute(client: PluginClientContext) {
   const runtime = new BookmarkRuntime(client);
   const lifetime = new AbortController();
-  const pills = new Map<string, PluginButtonRegistration>();
-  const headers = new Map<string, PluginButtonRegistration>();
+  const pills = new Map<string, PluginButtonRegistration<PluginText>>();
+  const headers = new Map<string, PluginButtonRegistration<PluginText>>();
   const Icon = (props: PluginButtonIconProps) => <BookmarkBridge {...props} runtime={runtime} />;
-  const stopPanel = client.addWorkspacePanel({ id: "bookmarks", title: "书签", icon: "Bookmark", locations: ["explorer"], Component: (props) => <BookmarkPanel {...props} runtime={runtime} /> });
-  const stopCommand = client.addCommandCenterItem({ id: "open-bookmarks", title: "打开对话书签", icon: "Bookmark", context: "workspace", keywords: ["bookmark", "书签", "收藏"], onSelect({ workspace }) { runtime.openPanel(workspace.id); } });
+  const stopPanel = client.addWorkspacePanel({ id: "bookmarks", title: messages.message("bookmarks"), icon: "Bookmark", locations: ["explorer"], Component: (props) => <BookmarkPanel {...props} runtime={runtime} /> });
+  const stopCommand = client.addCommandCenterItem({ id: "open-bookmarks", title: messages.message("open"), icon: "Bookmark", context: "workspace", keywords: ["bookmark", "书签", "收藏"], onSelect({ workspace }) { runtime.openPanel(workspace.id); } });
   const register = (agent: { id: string; workspaceId?: string | null; title?: string | null }) => {
     if (lifetime.signal.aborted || !agent.workspaceId) return;
     runtime.setTitles([agent]);
     const workspaceId = agent.workspaceId, agentId = agent.id;
-    if (!headers.has(workspaceId)) headers.set(workspaceId, client.addHeaderButton({ id: "bookmarks", workspaceId, button: { title: "打开对话书签", label: "书签", icon: Icon, behavior: { kind: "action", onPress: () => runtime.openPanel(workspaceId) } } }));
-    if (!pills.has(agentId)) pills.set(agentId, client.addComposerPill({ id: "bookmarks", workspaceId, agentId, button: { title: "打开对话书签", label: "书签", icon: Icon, behavior: { kind: "action", onPress: () => { runtime.select({ serverId: runtime.hostId, workspaceId, agentId, ownerId: agentId }); runtime.openPanel(workspaceId); } } } }));
+    if (!headers.has(workspaceId)) headers.set(workspaceId, client.addHeaderButton({ id: "bookmarks", workspaceId, button: { title: messages.message("open"), label: messages.message("bookmarks"), icon: Icon, behavior: { kind: "action", onPress: () => runtime.openPanel(workspaceId) } } }));
+    if (!pills.has(agentId)) pills.set(agentId, client.addComposerPill({ id: "bookmarks", workspaceId, agentId, button: { title: messages.message("open"), label: messages.message("bookmarks"), icon: Icon, behavior: { kind: "action", onPress: () => { runtime.select({ serverId: runtime.hostId, workspaceId, agentId, ownerId: agentId }); runtime.openPanel(workspaceId); } } } }));
   };
   void client.paseo.agents.list({ subscribe: {}, signal: lifetime.signal }).then(({ subscription }) => {
     if (lifetime.signal.aborted) { void subscription.release(); return; }
