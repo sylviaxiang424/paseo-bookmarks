@@ -4,6 +4,8 @@
 
 Save questions and answers in Paseo, then find them from a right-hand bookmark panel or the conversation timeline.
 
+![Bookmarks panel with message excerpts and remove actions](assets/bookmarks-panel.zh-CN.png)
+
 ## Features
 
 - Bookmark a question or answer with one click.

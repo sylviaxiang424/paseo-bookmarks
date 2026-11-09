@@ -2,7 +2,9 @@
   "id": "paseo-bookmarks",
   "name": "Conversation bookmarks",
   "description": "Bookmark questions and answers, navigate from a sidebar or timeline, and optionally inherit bookmarks when forking.",
-  "media": [],
+  "media": [
+    "assets/bookmarks-panel.zh-CN.png"
+  ],
   "requirements": {
     "paseo": ">=0.15.0 <0.16.0"
   },
