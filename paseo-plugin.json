@@ -3,6 +3,8 @@
   "name": "Conversation bookmarks",
   "description": "Bookmark questions and answers, navigate from a sidebar or timeline, and optionally inherit bookmarks when forking.",
   "media": [
+    "assets/bookmarks-panel.en.png",
+    "assets/bookmarks-inheritance.en.png",
     "assets/bookmarks-panel.zh-CN.png"
   ],
   "requirements": {

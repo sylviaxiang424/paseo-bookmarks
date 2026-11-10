@@ -4,7 +4,7 @@
 
 Save questions and answers in Paseo, then find them from a right-hand bookmark panel or the conversation timeline.
 
-![Bookmarks panel with message excerpts and remove actions](assets/bookmarks-panel.zh-CN.png)
+![Bookmarks beside a sample reading conversation, with timeline marks and excerpts](assets/bookmarks-panel.en.png)
 
 ## Features
 
@@ -14,6 +14,9 @@ Save questions and answers in Paseo, then find them from a right-hand bookmark p
 - Find bookmarked turns through gold ticks on the left timeline.
 - Choose whether a forked conversation inherits the original bookmarks. Inherited bookmarks keep their source; removing one in the fork does not change the original.
 - Reopen a closed source conversation when following a bookmark. If the source was deleted, keep the excerpt and show an unavailable message.
+- Switch tabs or panes to cancel an earlier jump. With no conversation selected, the panel shows a selection prompt and keeps saved data intact.
+
+[Preview the fork inheritance choice](assets/bookmarks-inheritance.en.png).
 
 ## Install
 
@@ -28,9 +31,9 @@ paseo plugin add git:sylviaxiang424/paseo-bookmarks
 ## Use
 
 1. Hover over a message and click its bookmark icon. For answers it sits just below the leading divider; for questions it sits beside the bubble's upper-right corner. Saved icons stay gold.
-2. Click **书签** (Bookmarks) in the workspace header or beside the composer to open the right panel.
+2. Click **Bookmarks** in the workspace header or beside the composer to open the right panel.
 3. Click an excerpt to jump, or the trash icon to remove it. Questions highlight only inside their bubble; answers highlight their text, excluding dividers and controls.
-4. When branching into a new tab, choose **继承书签** (Inherit) or **不继承** (Do not inherit).
+4. When branching into a new tab, choose **Inherit bookmarks** or **Do not inherit**.
 
 ## Data and compatibility
 

@@ -59,5 +59,9 @@ test("right panel removes an inherited bookmark directly without navigating and 
     assert.equal(jumps, 0, "the remove action does not navigate");
     assert.deepEqual(removals, [{ ownerId: "agent-b", bookmark: inherited }]);
     assert.ok(renderer.root.findAllByType("Text").some((node: any) => node.props.children === "还没有书签"));
+    snapshot = { ...snapshot, active: null, session: { bookmarks: [] } };
+    await act(async () => { for (const listener of listeners) listener(); });
+    assert.ok(renderer.root.findAllByType("Text").some((node: any) => node.props.children === "选择一个对话标签页"));
+    assert.ok(!renderer.root.findAllByType("Text").some((node: any) => node.props.children === "新对话 B"), "a cached agent title cannot leak into the no-conversation state");
   } finally { await act(async () => { renderer?.unmount(); }); i18n.runtime.dispose(); cache.clear(); }
 });

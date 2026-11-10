@@ -57,11 +57,11 @@ type Browser = {
   removeEventListener?(name: string, handler: () => void): void;
 };
 type Fiber = { return?: Fiber; child?: Fiber; sibling?: Fiber; memoizedProps?: unknown };
-export type ChatContext = { serverId: string; workspaceId: string; ownerId: string; agentId?: string; draftId?: string; focused?: boolean };
+export type ChatContext = { serverId: string; workspaceId: string; ownerId: string; agentId?: string; draftId?: string; paneId?: string; focused?: boolean };
 export type ForkSource = ChatContext & { draftId: string; sourceAgentId: string };
 export type WebCallbacks = {
   accepts(context: ChatContext): boolean;
-  context(context: ChatContext): void;
+  context(context: ChatContext | null): void;
   fork(source: ForkSource): void;
   bookmarks(context: ChatContext): readonly Bookmark[];
   toggle(context: ChatContext, bookmark: BookmarkInput): Promise<void>;
@@ -86,17 +86,18 @@ function visible(element: ElementLike) {
   return element.getClientRects().length > 0 && element.getBoundingClientRect().width > 0;
 }
 function contextFrom(propsList: Bag[]): ChatContext | undefined {
-  let serverId: string | undefined, workspaceId: string | undefined, agentId: string | undefined, draftId: string | undefined;
+  let serverId: string | undefined, workspaceId: string | undefined, agentId: string | undefined, draftId: string | undefined, paneId: string | undefined;
   let focused: boolean | undefined;
   for (const props of propsList) {
     serverId ??= string(props.serverId);
     workspaceId ??= string(props.workspaceId) ?? string(bag(props.workspace).id);
     agentId ??= string(props.agentId) ?? string(bag(props.agent).id);
     draftId ??= string(props.draftId);
+    paneId ??= string(props.paneId);
     if (focused === undefined && typeof props.isPaneFocused === "boolean") focused = props.isPaneFocused;
   }
   if (!serverId || !workspaceId || (!agentId && !draftId)) return;
-  return { serverId, workspaceId, ownerId: draftId ? `draft:${draftId}` : agentId!, focused, ...(draftId ? { draftId } : { agentId }) };
+  return { serverId, workspaceId, ownerId: draftId ? `draft:${draftId}` : agentId!, focused, paneId, ...(draftId ? { draftId } : { agentId }) };
 }
 const contextOf = (element: ElementLike) => contextFrom(ancestors(element));
 function rowItem(row: ElementLike): Bag {
@@ -244,8 +245,19 @@ export function createWebAdapter(callbacks: WebCallbacks) {
   const visibleScrolls = () => Array.from(document.querySelectorAll('[data-testid="agent-chat-scroll"]')).filter(visible);
   const activeScroll = (agentId?: string) => {
     const scrolls = visibleScrolls();
-    return agentId ? scrolls.find((node) => contextOf(node)?.agentId === agentId) : scrolls.find((node) => contextOf(node)?.focused === true) ?? scrolls[0];
+    return agentId ? scrolls.find((node) => contextOf(node)?.agentId === agentId) : scrolls.find((node) => contextOf(node)?.focused === true) ?? scrolls.find((node) => contextOf(node)?.focused !== false);
   };
+  const currentContext = () => {
+    const inputs = Array.from(document.querySelectorAll('[data-testid="message-input-root"]')).filter(visible);
+    const focusedInput = document.activeElement?.closest('[data-testid="message-input-root"]');
+    const input = inputs.find((node) => contextOf(node)?.focused === true)
+      ?? (focusedInput && visible(focusedInput) && contextOf(focusedInput)?.focused !== false ? focusedInput : inputs.find((node) => contextOf(node)?.focused !== false));
+    const inputContext = input ? contextOf(input) : undefined;
+    const scroll = activeScroll(inputContext?.agentId);
+    const context = input ? inputContext : scroll ? contextOf(scroll) : undefined;
+    return context && callbacks.accepts(context) ? context : null;
+  };
+  const syncContext = () => callbacks.context(currentContext());
   const colors = (node: ElementLike) => {
     for (const [name, value] of Object.entries(theme)) node.style.setProperty(`--pb-${name}`, value);
   };
@@ -323,20 +335,17 @@ export function createWebAdapter(callbacks: WebCallbacks) {
   };
   const scan = () => {
     if (disposed) return;
-    const inputs = Array.from(document.querySelectorAll('[data-testid="message-input-root"]')).filter(visible);
-    const focusedInput = document.activeElement?.closest('[data-testid="message-input-root"]');
-    const input = inputs.find((node) => contextOf(node)?.focused === true) ?? (focusedInput && visible(focusedInput) ? focusedInput : inputs[0]);
-    const inputContext = input ? contextOf(input) : undefined;
-    const scroll = activeScroll(inputContext?.agentId);
-    const context = input ? contextOf(input) : scroll ? contextOf(scroll) : undefined;
-    if (!context || !callbacks.accepts(context)) {
+    const context = currentContext();
+    callbacks.context(context);
+    if (!context) {
       for (const row of actions.keys()) clearAction(row);
       for (const tick of ticks.keys()) clearTick(tick);
       if (layoutScroll) resizeObserver?.unobserve(layoutScroll);
       layoutScroll = undefined; clearHighlight(); overlay.style.setProperty("visibility", "hidden");
       return;
     }
-    callbacks.context(context);
+    const input = Array.from(document.querySelectorAll('[data-testid="message-input-root"]')).find((node) => visible(node) && contextOf(node)?.ownerId === context.ownerId);
+    const scroll = activeScroll(context.agentId);
     if (context.draftId && input) {
       for (const props of ancestors(input)) {
         const attachments = Array.isArray(props.attachments) ? props.attachments : [];
@@ -435,6 +444,8 @@ export function createWebAdapter(callbacks: WebCallbacks) {
   scan();
   return {
     refresh: schedule,
+    syncContext,
+    cancelJump() { jumpVersion++; clearHighlight(); },
     setTheme(next: typeof theme) { theme = next; schedule(); },
     async jump(bookmark: Bookmark): Promise<boolean> {
       if (disposed) return false;
@@ -445,6 +456,8 @@ export function createWebAdapter(callbacks: WebCallbacks) {
       // Navigation, history loading and virtualized lane changes can all replace
       // this DOM node. Resolve the live source viewport on every pass.
       while (!disposed && version === jumpVersion && Date.now() < deadline) {
+        syncContext();
+        if (disposed || version !== jumpVersion) return false;
         const candidates = visibleScrolls().filter((node) => { const context = contextOf(node); return context?.agentId === bookmark.sourceAgentId && callbacks.accepts(context); });
         const scroll = candidates.find((node) => contextOf(node)?.focused === true) ?? candidates[0];
         if (!scroll) { await new Promise<void>((resolve) => setTimeout(resolve, 100)); continue; }

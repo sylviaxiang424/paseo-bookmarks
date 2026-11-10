@@ -74,7 +74,7 @@ export function BookmarkPanel({ runtime, ...props }: PluginWorkspacePanelProps &
         <Text style={{ color: colors.foreground, fontSize: 15, fontWeight: "600", flex: 1 }}>{t("title")}</Text>
         <Text style={{ color: colors.foregroundMuted, fontSize: 12 }}>{count}</Text>
       </View>
-      <Text numberOfLines={2} style={{ color: colors.foregroundMuted, fontSize: 12, lineHeight: 18, marginTop: 9 }}>{active?.draftId ? t("newFork") : title || (active?.agentId ? runtime.title(active.agentId) : t("selectConversation"))}</Text>
+      <Text numberOfLines={2} style={{ color: colors.foregroundMuted, fontSize: 12, lineHeight: 18, marginTop: 9 }}>{!active ? t("selectConversation") : active.draftId ? t("newFork") : title || runtime.title(active.agentId!)}</Text>
     </View>
     {state.error ? <View accessibilityRole="alert" style={{ padding: 12, margin: 12, borderRadius: 7, backgroundColor: colors.surface1 }}>
       <Text style={{ color: colors.statusDanger, fontSize: 12, lineHeight: 19 }}>{localizeError(state.error, t)}</Text>
@@ -87,8 +87,8 @@ export function BookmarkPanel({ runtime, ...props }: PluginWorkspacePanelProps &
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 12, gap: 9, paddingBottom: 20 }}>
       {!count ? <View style={{ alignItems: "center", paddingVertical: 40, paddingHorizontal: 12, gap: 12 }}>
         <Icon name="Bookmark" size={28} color={colors.foregroundMuted} />
-        <Text style={{ color: colors.foreground, fontSize: 14 }}>{state.loading ? t("loading") : t("empty")}</Text>
-        <Text style={{ color: colors.foregroundMuted, fontSize: 12, lineHeight: 20, textAlign: "center" }}>{t(Platform.OS === "web" ? "emptyHint" : "desktopOnly")}</Text>
+        <Text style={{ color: colors.foreground, fontSize: 14 }}>{!active ? t("selectConversation") : state.loading ? t("loading") : t("empty")}</Text>
+        {active ? <Text style={{ color: colors.foregroundMuted, fontSize: 12, lineHeight: 20, textAlign: "center" }}>{t(Platform.OS === "web" ? "emptyHint" : "desktopOnly")}</Text> : null}
       </View> : session.bookmarks.map((bookmark, index) => {
         const inherited = bookmark.sourceAgentId !== active?.agentId;
         const removing = removal.isPending && removal.variables?.bookmark.id === bookmark.id;

@@ -5,6 +5,7 @@ import { messages, type Translate } from "./messages";
 import { createWebAdapter, type ChatContext, type ForkSource } from "./web";
 
 type Navigation = PluginWorkspacePanelProps["navigation"];
+type JumpRequest = { origin: ChatContext | null; expectedAgentId?: string };
 type Snapshot = {
   active: ChatContext | null;
   session: BookmarkSession;
@@ -16,6 +17,7 @@ type Snapshot = {
   promptChoice: readonly Bookmark[];
 };
 const key = (ownerId: string) => ["paseo-bookmarks", ownerId] as const;
+const sameContext = (left: ChatContext | null, right: ChatContext | null) => left?.serverId === right?.serverId && left?.ownerId === right?.ownerId && left?.workspaceId === right?.workspaceId && left?.paneId === right?.paneId;
 export class BookmarkRuntime {
   private snapshot: Snapshot = { active: null, session: emptySession(), loading: false, error: null, jumping: null, fork: null, forkOpen: false, promptChoice: [] };
   private listeners = new Set<() => void>();
@@ -31,6 +33,7 @@ export class BookmarkRuntime {
   private timer?: ReturnType<typeof setInterval>;
   private stopped = false;
   private started = false;
+  private pendingJump?: JumpRequest;
   hostId = "";
   navigation?: Navigation;
 
@@ -52,7 +55,7 @@ export class BookmarkRuntime {
       this.started = true;
       this.adapter = createWebAdapter({
         accepts: (context) => context.serverId === this.hostId,
-        context: (context) => { if (context.serverId === this.hostId) this.select(context); },
+        context: (context) => this.select(context),
         fork: (fork) => { if (fork.serverId === this.hostId) void this.detectFork(fork); },
         bookmarks: (context) => context.serverId === this.hostId ? this.sessions.get(context.ownerId)?.bookmarks ?? [] : [],
         toggle: (context, target) => this.toggle(context, target),
@@ -65,11 +68,27 @@ export class BookmarkRuntime {
     }
   }
   setTheme(colors: { accent: string; muted: string; surface: string; border: string }) { this.adapter?.setTheme(colors); }
-  select(context: ChatContext) {
-    if (this.stopped || context.serverId !== this.hostId) return;
-    if (this.snapshot.active?.ownerId === context.ownerId && this.snapshot.active.workspaceId === context.workspaceId) return;
+  private cancelJump() {
+    this.pendingJump = undefined;
+    this.adapter?.cancelJump();
+    this.patch({ jumping: null });
+  }
+  select(context: ChatContext | null) {
+    if (this.stopped || (context && context.serverId !== this.hostId)) return;
+    const request = this.pendingJump;
+    if (request?.expectedAgentId) {
+      // Allow the navigation requested by this jump, including a brief unmount.
+      // Any different conversation/pane is a newer user selection.
+      if (context?.agentId === request.expectedAgentId) request.expectedAgentId = undefined;
+      else if (context && !sameContext(context, request.origin)) this.cancelJump();
+    } else if (request && !sameContext(this.snapshot.active, context)) this.cancelJump();
+    if (sameContext(this.snapshot.active, context)) return;
+    if (!context) {
+      this.patch({ active: null, session: emptySession(), loading: false, error: null, forkOpen: false, promptChoice: [] });
+      return;
+    }
     this.patch({ active: context, session: this.sessions.get(context.ownerId) ?? emptySession(), error: null, loading: true });
-    void this.load(context.ownerId).catch((error) => this.fail(error));
+    void this.load(context.ownerId).catch((error) => { if (this.snapshot.active?.ownerId === context.ownerId) this.fail(error); });
     if (context.agentId && !this.seenAgents.has(context.agentId)) {
       this.seenAgents.add(context.agentId);
       void this.bindInitialDraft(context.agentId).catch(() => { this.seenAgents.delete(context.agentId!); });
@@ -152,11 +171,13 @@ export class BookmarkRuntime {
     if (!this.stopped) this.commit(agentId, session);
   }
   openPanel(workspaceId: string) { this.client.openPanel("bookmarks", { workspaceId, location: "explorer" }); }
-  private async resolveTarget(bookmark: Bookmark): Promise<Bookmark> {
+  private async resolveTarget(bookmark: Bookmark, current: () => boolean): Promise<Bookmark | undefined> {
     const handle = this.client.paseo.agents.ref(bookmark.sourceAgentId);
     const source = await handle.refresh();
+    if (!current()) return;
     if (!source) throw new Error("BOOKMARKS_SOURCE_UNAVAILABLE");
     let page = await handle.timeline.refetch({ direction: "tail", limit: 100 });
+    if (!current()) return;
     if (page.error) throw new Error("BOOKMARKS_SOURCE_READ_FAILED");
     const matches = (entry: typeof page.entries[number]) => {
       const item = entry.item;
@@ -167,6 +188,7 @@ export class BookmarkRuntime {
     let target = page.entries.find(matches);
     if (!target && page.epoch === bookmark.epoch) {
       page = await handle.timeline.refetch({ direction: "after", cursor: { epoch: page.epoch, seq: Math.max(0, bookmark.seq - 1) }, limit: 5 });
+      if (!current()) return;
       if (page.error) throw new Error("BOOKMARKS_SOURCE_READ_INTERRUPTED");
       target = page.entries.find(matches);
     }
@@ -174,6 +196,7 @@ export class BookmarkRuntime {
     // and never jump to a different message that reused an old seq.
     for (let count = 0; !target && page.hasOlder && page.startCursor && count < 80; count++) {
       page = await handle.timeline.refetch({ direction: "before", cursor: page.startCursor, limit: 100 });
+      if (!current()) return;
       if (page.error) throw new Error("BOOKMARKS_SOURCE_READ_INTERRUPTED");
       target = page.entries.find(matches);
     }
@@ -185,22 +208,31 @@ export class BookmarkRuntime {
   }
   async jump(bookmark: Bookmark, navigation = this.navigation) {
     if (this.snapshot.jumping || this.stopped) return;
+    this.adapter?.syncContext();
+    const request: JumpRequest = { origin: this.snapshot.active };
+    this.pendingJump = request;
+    const current = () => !this.stopped && this.pendingJump === request;
     this.patch({ jumping: bookmark.id, error: null, promptChoice: [] });
     try {
       // A rewind or slow tab activation can invalidate the first target window.
       // Recover once with fresh canonical identity and native tab navigation.
-      for (let attempt = 0; attempt < 2 && !this.stopped; attempt++) {
-        const target = await this.resolveTarget(bookmark);
-        if (this.stopped) return;
+      for (let attempt = 0; attempt < 2 && current(); attempt++) {
+        const target = await this.resolveTarget(bookmark, current);
+        this.adapter?.syncContext();
+        if (!current() || !target) return;
         if (this.snapshot.active?.agentId !== bookmark.sourceAgentId || attempt > 0) {
-          if (navigation) navigation.openAgent({ agentId: bookmark.sourceAgentId, serverId: this.hostId });
+          if (navigation) {
+            request.origin = this.snapshot.active;
+            request.expectedAgentId = bookmark.sourceAgentId;
+            navigation.openAgent({ agentId: bookmark.sourceAgentId, serverId: this.hostId });
+          }
           else if (this.snapshot.active?.agentId !== bookmark.sourceAgentId) throw new Error("BOOKMARKS_OPEN_FROM_PANEL");
         }
         if (await this.adapter?.jump(target)) return;
       }
-      if (!this.stopped) throw new Error("BOOKMARKS_LOCATION_PENDING");
-    } catch (error) { this.fail(error); }
-    finally { this.patch({ jumping: null }); }
+      if (current()) throw new Error("BOOKMARKS_LOCATION_PENDING");
+    } catch (error) { this.adapter?.syncContext(); if (current()) this.fail(error); }
+    finally { if (current()) { this.pendingJump = undefined; this.patch({ jumping: null }); } }
   }
   dispose() { this.stopped = true; if (this.timer) clearInterval(this.timer); this.adapter?.dispose(); this.listeners.clear(); }
 }
