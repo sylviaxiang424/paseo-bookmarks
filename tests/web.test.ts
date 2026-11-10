@@ -82,11 +82,14 @@ test("desktop adapter adds and removes bookmarks, marks the rail, jumps to unloa
     } });
   const wait = () => new Promise((resolve) => setTimeout(resolve, 300));
   try {
-    const button = row.querySelector(".pb-message-action")!;
+    const button = window.document.querySelector('.pb-message-action[data-pb-message-id="message-2"]')!;
+    assert.equal(scroll.querySelector("[data-pb-ui]"), null, "controls never enter the host's measured history tree");
+    assert.equal(row.firstElementChild!.className, "host-message-content");
+    assert.equal(row.firstElementChild!.getAttribute("style"), "max-width: 1040px;");
     assert.equal(button.getAttribute("aria-label"), "添加书签");
     assert.equal(button.style.top, "17px", "answer control sits just below the leading rule");
     assert.equal(button.style.left, "1108px", "answer control has a gap beside the text column");
-    const questionButton = question.querySelector(".pb-message-action")!;
+    const questionButton = window.document.querySelector('.pb-message-action[data-pb-message-id="message-3"]')!;
     assert.equal(questionButton.style.top, "8px", "question control aligns with the bubble's top");
     assert.equal(questionButton.style.left, "1108px", "question control stays outside the bubble");
     button.click(); await wait();
@@ -104,13 +107,13 @@ test("desktop adapter adds and removes bookmarks, marks the rail, jumps to unloa
     i18n.setLocale("zh-CN"); adapter.refresh(); await wait();
     tick.click(); await wait();
     assert.equal(jumpedSeq, 0, "mounted messages do not depend on the outline"); assert.equal(scrolledTo, "message-2");
-    const highlight = row.querySelector(".pb-message-highlight")!;
+    const highlight = window.document.querySelector(".pb-message-highlight")!;
     assert.equal(highlight.style.top, "26px", "highlight starts below the separator at y=10");
     assert.equal(highlight.style.height, "58px", "highlight ends before footer controls");
     assert.equal(highlight.style.left, "94px", "highlight stays inside the centered text area");
     assert.equal(row.hasAttribute("data-pb-highlight"), false, "the full-width row stays undecorated");
     await adapter.jump({ ...saved[0], role: "user", seq: 3, messageId: "message-3", aliases: ["message-3"], summary: "问题 3" });
-    const bubbleHighlight = question.querySelector(".pb-message-highlight")!;
+    const bubbleHighlight = window.document.querySelector(".pb-message-highlight")!;
     assert.equal(bubbleHighlight.style.left, "500px"); assert.equal(bubbleHighlight.style.top, "4px");
     assert.equal(bubbleHighlight.style.width, "600px"); assert.equal(bubbleHighlight.style.height, "70px", "question highlight has no expansion outside the bubble");
     assert.equal(bubbleHighlight.style.borderRadius, "16px 2px 16px 16px", "the bubble's asymmetric corners are preserved");
@@ -133,7 +136,7 @@ test("desktop adapter adds and removes bookmarks, marks the rail, jumps to unloa
     (input as any).__reactFiber$test = { memoizedProps: { serverId: "host-a", workspaceId: "workspace-a", draftId: "draft-b", attachments: [{ kind: "chat_history", source: { agentId: "agent-a" } }] } };
     adapter.refresh(); await wait();
     assert.equal(forks[0].draftId, "draft-b"); assert.equal(forks[0].sourceAgentId, "agent-a");
-    assert.equal(scroll.querySelector(".pb-message-action"), null, "hidden source chat actions are removed while a draft is active");
+    assert.equal(window.document.querySelector(".pb-message-action"), null, "hidden source chat actions are removed while a draft is active");
     const secondInput = window.document.createElement("div"); secondInput.setAttribute("data-testid", "message-input-root"); measurable(secondInput);
     (secondInput as any).__reactFiber$test = { memoizedProps: { serverId: "host-a", workspaceId: "workspace-a", agentId: "agent-c", isPaneFocused: true } };
     section.appendChild(secondInput); adapter.refresh(); await wait();
@@ -142,7 +145,8 @@ test("desktop adapter adds and removes bookmarks, marks the rail, jumps to unloa
     adapter.dispose(); i18n.runtime.dispose();
     assert.equal(window.document.querySelector(".pb-message-action"), null);
     assert.equal(window.document.querySelector(".pb-message-highlight"), null);
-    assert.equal(row.style.position, "", "the host row's original positioning is restored");
+    assert.equal(row.style.position, "", "the host row's original positioning is untouched");
+    assert.equal(window.document.querySelector("[data-pb-ui=overlay]"), null);
     assert.equal(window.document.querySelector(".pb-message-column"), null);
     assert.equal(window.document.querySelector("[data-pb-ui=style]"), null);
     (globalThis as any).document = previousDocument; (globalThis as any).MutationObserver = previousObserver;

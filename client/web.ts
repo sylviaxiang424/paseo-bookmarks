@@ -9,7 +9,7 @@ import { readableText, summarize, type Bookmark, type BookmarkInput } from "../s
 type Bag = Record<string, unknown>;
 type Rect = { left: number; right: number; top: number; bottom: number; width: number; height: number };
 type TextNode = { textContent: string | null; parentElement: ElementLike | null };
-type WebEvent = { stopPropagation(): void; preventDefault(): void; key?: string };
+type WebEvent = { stopPropagation(): void; preventDefault(): void; key?: string; relatedTarget?: ElementLike | null };
 type ElementLike = {
   [key: string]: unknown;
   parentElement: ElementLike | null;
@@ -25,6 +25,7 @@ type ElementLike = {
   getClientRects(): ArrayLike<Rect>;
   getBoundingClientRect(): Rect;
   closest(selector: string): ElementLike | null;
+  matches(selector: string): boolean;
   appendChild(child: ElementLike): unknown;
   remove(): void;
   scrollIntoView(options: { block: string; behavior: string }): void;
@@ -41,12 +42,19 @@ type Browser = {
     createTreeWalker(root: ElementLike, show: number): { nextNode(): TextNode | null };
     createRange(): { selectNodeContents(node: TextNode): void; getBoundingClientRect(): Rect };
     querySelectorAll(selector: string): ArrayLike<ElementLike>;
+    addEventListener(name: string, handler: () => void, capture?: boolean): void;
+    removeEventListener(name: string, handler: () => void, capture?: boolean): void;
   };
   getComputedStyle(element: ElementLike): { backgroundColor: string; borderRadius: string };
   MutationObserver: new (callback: (records: Array<{ target: ElementLike }>) => void) => {
     observe(node: ElementLike, options: Bag): void;
     disconnect(): void;
   };
+  ResizeObserver?: new (callback: () => void) => { observe(node: ElementLike): void; unobserve(node: ElementLike): void; disconnect(): void };
+  requestAnimationFrame?(callback: () => void): number;
+  cancelAnimationFrame?(id: number): void;
+  addEventListener?(name: string, handler: () => void): void;
+  removeEventListener?(name: string, handler: () => void): void;
 };
 type Fiber = { return?: Fiber; child?: Fiber; sibling?: Fiber; memoizedProps?: unknown };
 export type ChatContext = { serverId: string; workspaceId: string; ownerId: string; agentId?: string; draftId?: string; focused?: boolean };
@@ -194,11 +202,11 @@ function surfaceBounds(surface: NonNullable<ReturnType<typeof messageSurface>>, 
 }
 
 const CSS = `
-.pb-message-column{width:calc(100% - 64px)!important}
+.pb-message-overlay{position:fixed;pointer-events:none;contain:strict;overflow:hidden;z-index:20}
 .pb-message-tools{position:absolute;inset:0;pointer-events:none}
 .pb-message-action{display:flex;align-items:center;justify-content:center;flex-shrink:0;width:26px;height:24px;padding:0;border:0;border-radius:6px;background:transparent;color:var(--pb-muted);cursor:pointer;opacity:0;transition:opacity .12s,background-color .12s}
-.pb-message-action{position:absolute;pointer-events:auto}
-[data-history-row-id]:hover>.pb-message-tools>.pb-message-action,.pb-message-tools:focus-within>.pb-message-action,.pb-message-action[aria-pressed=true]{opacity:1}
+.pb-message-action{position:absolute;pointer-events:none}
+.pb-message-action[data-pb-hover],.pb-message-action:hover,.pb-message-action:focus-visible,.pb-message-action[aria-pressed=true]{opacity:1;pointer-events:auto}
 .pb-message-action:hover{background:color-mix(in srgb,var(--pb-muted) 10%,transparent)}
 .pb-message-action:focus-visible{outline:2px solid var(--pb-accent);outline-offset:2px}
 .pb-message-action svg{display:block;pointer-events:none}
@@ -207,7 +215,7 @@ const CSS = `
 @keyframes pb-bookmark-flash{0%,45%{background-color:color-mix(in srgb,var(--pb-accent) 10%,transparent)}100%{background-color:transparent}}
 [data-pb-count]>div{background:var(--pb-accent)!important;min-width:16px;min-height:3px;border-radius:999px}
 @media(prefers-reduced-motion:reduce){.pb-message-action{transition:none}.pb-message-highlight{animation:none}}
-@media(hover:none){.pb-message-action{opacity:1}}
+@media(hover:none){.pb-message-action{opacity:1;pointer-events:auto}}
 `;
 
 export function createWebAdapter(callbacks: WebCallbacks) {
@@ -215,11 +223,12 @@ export function createWebAdapter(callbacks: WebCallbacks) {
   const browser = globalThis as unknown as Browser;
   if (!browser.document?.body || !browser.MutationObserver) return undefined;
   const document = browser.document;
-  const actions = new Map<ElementLike, { toolbar: ElementLike; button: ElementLike; icon: ElementLike; column?: ElementLike; position: string; target: BookmarkInput; context: ChatContext }>();
+  const actions = new Map<ElementLike, { toolbar: ElementLike; button: ElementLike; icon: ElementLike; enter: () => void; leave: (event: WebEvent) => void; target: BookmarkInput; context: ChatContext }>();
   const ticks = new Map<ElementLike, { title: string | null; click: (event: WebEvent) => void; entries: readonly Bookmark[] }>();
   let disposed = false, scheduled: ReturnType<typeof setTimeout> | undefined;
   let jumpVersion = 0;
-  let highlight: { node: ElementLike; timer: ReturnType<typeof setTimeout> } | undefined;
+  let highlight: { node: ElementLike; row: ElementLike; role: Bookmark["role"]; timer: ReturnType<typeof setTimeout> } | undefined;
+  let layoutScroll: ElementLike | undefined, layoutFrame: number | undefined, layoutFallback: ReturnType<typeof setTimeout> | undefined;
   const clearHighlight = () => {
     if (!highlight) return;
     clearTimeout(highlight.timer); highlight.node.remove(); highlight = undefined;
@@ -227,6 +236,11 @@ export function createWebAdapter(callbacks: WebCallbacks) {
   let theme = { accent: "#b7791f", muted: "#6b7280", surface: "#ffffff", border: "#e5e7eb" };
   const style = document.createElement("style");
   style.setAttribute("data-pb-ui", "style"); style.textContent = CSS; document.head.appendChild(style);
+  // Keep controls outside the measured history tree. Even absolutely positioned
+  // descendants can extend scroll overflow or change a virtual row's containing
+  // block; no host row/column styles or classes are modified here.
+  const overlay = document.createElement("div");
+  overlay.className = "pb-message-overlay"; overlay.setAttribute("data-pb-ui", "overlay"); document.body.appendChild(overlay);
   const visibleScrolls = () => Array.from(document.querySelectorAll('[data-testid="agent-chat-scroll"]')).filter(visible);
   const activeScroll = (agentId?: string) => {
     const scrolls = visibleScrolls();
@@ -235,12 +249,70 @@ export function createWebAdapter(callbacks: WebCallbacks) {
   const colors = (node: ElementLike) => {
     for (const [name, value] of Object.entries(theme)) node.style.setProperty(`--pb-${name}`, value);
   };
+  const positionHighlight = (left: number, top: number, width: number) => {
+    if (!highlight) return;
+    if (highlight.row.isConnected === false || highlight.row.closest('[data-testid="agent-chat-scroll"]') !== layoutScroll) { clearHighlight(); return; }
+    const surface = messageSurface(highlight.row, highlight.role, browser), bounds = surface && surfaceBounds(surface, browser);
+    const question = highlight.role === "user";
+    if (!bounds || (question && !surface?.bubble)) { clearHighlight(); return; }
+    const paddingX = question ? 0 : 6, paddingY = question ? 0 : 4;
+    const start = Math.max(0, bounds.left - left - paddingX), end = Math.min(width, bounds.right - left + paddingX);
+    highlight.node.style.cssText = `left:${start}px;top:${bounds.top - top - paddingY}px;width:${Math.max(0, end - start)}px;height:${bounds.height + paddingY * 2}px`;
+    if (question && surface?.bubble) highlight.node.style.setProperty("border-radius", browser.getComputedStyle(surface.bubble).borderRadius);
+    colors(highlight.node);
+  };
+  const positionActions = () => {
+    if (disposed) return;
+    const viewport = layoutScroll?.getBoundingClientRect();
+    const blocked = Array.from(document.querySelectorAll('[role="dialog"],[aria-modal="true"],[role="menu"]')).some(visible);
+    if (!viewport?.width || !viewport.height || blocked) { overlay.style.setProperty("visibility", "hidden"); return; }
+    const left = viewport.left ?? 0, top = viewport.top ?? 0, right = left + viewport.width;
+    overlay.style.cssText = `left:${left}px;top:${top}px;width:${viewport.width}px;height:${viewport.height}px`;
+    for (const [row, action] of actions) {
+      const rowBounds = row.getBoundingClientRect();
+      if (row.isConnected === false || rowBounds.bottom <= top || rowBounds.top >= top + viewport.height) {
+        action.toolbar.style.setProperty("visibility", "hidden"); continue;
+      }
+      const surface = messageSurface(row, action.target.role, browser), bounds = surface && surfaceBounds(surface, browser);
+      if (!surface || !bounds?.width || !bounds.height) {
+        action.toolbar.style.setProperty("visibility", "hidden"); continue;
+      }
+      // Use the host's existing gutter, including its scroll-container padding.
+      // On narrow panes shrink the hit area/icon instead of narrowing the prose.
+      const gutter = right - bounds.right;
+      if (gutter < 16) { action.toolbar.style.setProperty("visibility", "hidden"); continue; }
+      const iconSize = Math.min(16, gutter - 4), buttonWidth = Math.min(26, gutter);
+      let y = bounds.top + (action.target.role === "user" ? 4 : -4);
+      if (action.target.role === "assistant") {
+        const rule = Array.from(surface.column.querySelectorAll('hr,[role="separator"],div')).map(node => ({ node, rect: node.getBoundingClientRect() }))
+          .filter(({ node, rect }) => !node.textContent?.trim() && rect.height > 0 && rect.height <= 2.5 && rect.width >= bounds.width * 0.5 && rect.bottom <= bounds.top)
+          .sort((a, b) => b.rect.bottom - a.rect.bottom)[0];
+        if (rule) y = rule.rect.bottom + 6;
+      }
+      // Clipped, offscreen controls must not remain keyboard-focusable: focusing
+      // them can scroll an overflow:hidden container internally.
+      if (y < top || y + 24 > top + viewport.height) { action.toolbar.style.setProperty("visibility", "hidden"); continue; }
+      const anchor = action.target.role === "assistant" ? surface.column.getBoundingClientRect().right : bounds.right;
+      action.button.style.setProperty("left", `${Math.max(0, Math.min(anchor + 8, right - buttonWidth) - left)}px`);
+      action.button.style.setProperty("top", `${y - top}px`);
+      action.button.style.setProperty("width", `${buttonWidth}px`);
+      action.icon.setAttribute("width", String(iconSize)); action.icon.setAttribute("height", String(iconSize));
+      action.toolbar.style.setProperty("visibility", "visible");
+    }
+    positionHighlight(left, top, viewport.width);
+  };
+  const requestLayout = () => {
+    if (disposed || layoutFrame !== undefined || layoutFallback !== undefined) return;
+    if (browser.requestAnimationFrame) layoutFrame = browser.requestAnimationFrame(() => { layoutFrame = undefined; positionActions(); });
+    else layoutFallback = setTimeout(() => { layoutFallback = undefined; positionActions(); }, 0);
+  };
+  const resizeObserver = browser.ResizeObserver ? new browser.ResizeObserver(requestLayout) : undefined;
   const clearAction = (row: ElementLike) => {
     const action = actions.get(row);
     if (!action) return;
     action.toolbar.remove();
-    if (action.column) action.column.className = action.column.className.replace(/(?:^|\s)pb-message-column(?=\s|$)/g, "").trim();
-    if (!action.position && row.style.position === "relative") row.style.position = action.position;
+    row.removeEventListener("pointerenter", action.enter); row.removeEventListener("pointerleave", action.leave);
+    resizeObserver?.unobserve(row);
     actions.delete(row);
   };
   const clearTick = (tick: ElementLike) => {
@@ -260,6 +332,8 @@ export function createWebAdapter(callbacks: WebCallbacks) {
     if (!context || !callbacks.accepts(context)) {
       for (const row of actions.keys()) clearAction(row);
       for (const tick of ticks.keys()) clearTick(tick);
+      if (layoutScroll) resizeObserver?.unobserve(layoutScroll);
+      layoutScroll = undefined; clearHighlight(); overlay.style.setProperty("visibility", "hidden");
       return;
     }
     callbacks.context(context);
@@ -271,6 +345,12 @@ export function createWebAdapter(callbacks: WebCallbacks) {
       }
     }
     const current = scroll ? contextOf(scroll) : undefined;
+    const nextScroll = current?.agentId === context.agentId && current?.serverId === context.serverId && current?.workspaceId === context.workspaceId ? scroll : undefined;
+    if (layoutScroll !== nextScroll) {
+      if (layoutScroll) resizeObserver?.unobserve(layoutScroll);
+      layoutScroll = nextScroll;
+      if (layoutScroll) resizeObserver?.observe(layoutScroll);
+    }
     const seenRows = new Set<ElementLike>(), seenTicks = new Set<ElementLike>();
     if (scroll && current?.agentId && current.serverId === context.serverId && current.workspaceId === context.workspaceId && current.agentId === context.agentId) {
       let railParent: ElementLike | null = scroll;
@@ -291,7 +371,7 @@ export function createWebAdapter(callbacks: WebCallbacks) {
       for (const row of Array.from(scroll.querySelectorAll("[data-history-row-id][data-message-id]"))) {
         const target = describe(row, current, promptSeqs, callbacks.title(current.agentId));
         if (!target || seenMessages.has(target.messageId)) continue;
-        seenMessages.add(target.messageId); seenRows.add(row); colors(row);
+        seenMessages.add(target.messageId); seenRows.add(row);
         let action = actions.get(row);
         if (!action) {
           const toolbar = document.createElement("div");
@@ -303,33 +383,21 @@ export function createWebAdapter(callbacks: WebCallbacks) {
           const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
           path.setAttribute("d", "M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z");
           icon.appendChild(path); button.appendChild(icon); toolbar.appendChild(button);
-          const state = { toolbar, button, icon, column: undefined as ElementLike | undefined, position: row.style.position, target, context: current };
+          const enter = () => button.setAttribute("data-pb-hover", "true");
+          const leave = (event: WebEvent) => { if (event.relatedTarget?.closest?.('.pb-message-action') !== button) button.removeAttribute("data-pb-hover"); };
+          row.addEventListener("pointerenter", enter); row.addEventListener("pointerleave", leave);
+          button.addEventListener("pointerleave", (event) => { if (event.relatedTarget?.closest?.('[data-history-row-id]') !== row) button.removeAttribute("data-pb-hover"); });
+          if (row.matches(":hover")) enter();
+          const state = { toolbar, button, icon, enter, leave, target, context: current };
           action = state; actions.set(row, state);
           button.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); void callbacks.toggle(state.context, state.target).catch(() => callbacks.error("BOOKMARKS_SAVE_FAILED")); });
-          if (!row.style.position) row.style.position = "relative";
-          row.appendChild(toolbar);
+          // Mouse clicks should not steal composer focus or invoke native focus scrolling.
+          // Keyboard focus/activation remains available through the native button.
+          button.addEventListener("mousedown", (event) => event.preventDefault());
+          overlay.appendChild(toolbar); resizeObserver?.observe(row);
         }
         action.target = target; action.context = current;
-        const surface = messageSurface(row, target.role, browser);
-        if (action.column && action.column !== surface?.column) action.column.className = action.column.className.replace(/(?:^|\s)pb-message-column(?=\s|$)/g, "").trim();
-        action.column = surface?.column;
-        if (surface && !/(?:^|\s)pb-message-column(?:\s|$)/.test(surface.column.className)) surface.column.className += " pb-message-column";
-        const bounds = surface && surfaceBounds(surface, browser), rowBounds = row.getBoundingClientRect();
-        if (bounds && bounds.width > 0 && bounds.height > 0) {
-          let top = bounds.top - rowBounds.top + (target.role === "user" ? 4 : -4);
-          if (target.role === "assistant" && surface) {
-            // The leading rule is decorative: place the control below it and
-            // keep the following text's own bounds for jump highlighting.
-            const rule = Array.from(surface.column.querySelectorAll('hr,[role="separator"],div')).map((node) => ({ node, rect: node.getBoundingClientRect() }))
-              .filter(({ node, rect }) => !node.textContent?.trim() && rect.height > 0 && rect.height <= 2.5 && rect.width >= bounds.width * 0.5 && rect.bottom <= bounds.top)
-              .sort((a, b) => b.rect.bottom - a.rect.bottom)[0];
-            if (rule) top = rule.rect.bottom - rowBounds.top + 6;
-          }
-          const anchorRight = target.role === "assistant" && surface ? surface.column.getBoundingClientRect().right : bounds.right;
-          action.button.style.setProperty("left", `${Math.min(anchorRight - rowBounds.left + 8, rowBounds.width - 26)}px`);
-          action.button.style.setProperty("top", `${Math.max(0, top)}px`);
-          action.toolbar.style.setProperty("visibility", "visible");
-        } else action.toolbar.style.setProperty("visibility", "hidden");
+        action.button.setAttribute("data-pb-message-id", target.messageId); colors(action.toolbar);
         const selected = saved.some((entry) => entry.sourceAgentId === target.sourceAgentId && (entry.messageId === target.messageId || entry.aliases.some((id) => target.aliases.includes(id))));
         const label = callbacks.t(selected ? "remove" : "add");
         if (action.button.getAttribute("aria-label") !== label) {
@@ -355,12 +423,14 @@ export function createWebAdapter(callbacks: WebCallbacks) {
     }
     for (const row of actions.keys()) if (!seenRows.has(row)) clearAction(row);
     for (const tick of ticks.keys()) if (!seenTicks.has(tick)) clearTick(tick);
+    positionActions();
   };
   const schedule = () => { if (!disposed && !scheduled) scheduled = setTimeout(() => { scheduled = undefined; scan(); }, 100); };
   const observer = new browser.MutationObserver((records) => {
     if (records.some((record) => !record.target.closest?.("[data-pb-ui]"))) schedule();
   });
   observer.observe(document.body, { childList: true, subtree: true });
+  document.addEventListener("scroll", requestLayout, true); browser.addEventListener?.("resize", requestLayout);
   const timer = setInterval(schedule, 700);
   scan();
   return {
@@ -425,14 +495,11 @@ export function createWebAdapter(callbacks: WebCallbacks) {
           // A question may only flash its actual bubble. Never fall back to a
           // text/row rectangle when that bubble cannot be identified.
           if (bounds && (!question || surface?.bubble)) {
-            const rowBounds = target.getBoundingClientRect(), layer = document.createElement("div");
+            const layer = document.createElement("div");
             layer.className = "pb-message-highlight"; layer.setAttribute("data-pb-ui", "highlight"); layer.setAttribute("aria-hidden", "true");
-            const paddingX = question ? 0 : 6, paddingY = question ? 0 : 4;
-            const left = Math.max(0, bounds.left - rowBounds.left - paddingX), right = Math.min(rowBounds.width, bounds.right - rowBounds.left + paddingX);
-            layer.style.cssText = `left:${left}px;top:${Math.max(0, bounds.top - rowBounds.top - paddingY)}px;width:${right - left}px;height:${bounds.height + paddingY * 2}px`;
-            if (question && surface?.bubble) layer.style.setProperty("border-radius", browser.getComputedStyle(surface.bubble).borderRadius);
-            colors(layer); target.appendChild(layer);
-            highlight = { node: layer, timer: setTimeout(clearHighlight, 1800) };
+            overlay.appendChild(layer);
+            highlight = { node: layer, row: target, role: bookmark.role, timer: setTimeout(clearHighlight, 1800) };
+            positionActions();
           }
           return true;
         }
@@ -442,11 +509,14 @@ export function createWebAdapter(callbacks: WebCallbacks) {
     },
     dispose() {
       disposed = true; observer.disconnect(); clearInterval(timer); if (scheduled) clearTimeout(scheduled);
+      if (layoutFrame !== undefined) browser.cancelAnimationFrame?.(layoutFrame);
+      if (layoutFallback !== undefined) clearTimeout(layoutFallback);
+      resizeObserver?.disconnect(); document.removeEventListener("scroll", requestLayout, true); browser.removeEventListener?.("resize", requestLayout);
       jumpVersion++;
       clearHighlight();
       for (const row of actions.keys()) clearAction(row);
       for (const tick of ticks.keys()) clearTick(tick);
-      style.remove();
+      overlay.remove(); style.remove();
     },
   };
 }

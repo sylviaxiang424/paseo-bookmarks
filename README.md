@@ -49,4 +49,6 @@ paseo plugin install /absolute/path/to/paseo-bookmarks
 
 After editing, run the checks and reload with `paseo plugin reload paseo-bookmarks`. No separate build is required. Runtime dependencies are provided by Paseo.
 
+With Tabbit and its CLI installed, `npm run test:layout` checks actual browser geometry, scrolling and focus at three pane widths. Set `TABBIT_CLI` if the launcher is outside `~/.local/bin`.
+
 `client/` contains the panel, navigation and web adapter; `server/` handles local storage; `shared/` defines the data and RPC contracts. Tests cover persistence, fork inheritance, direct removal, layout bounds and navigation through unloaded or remounted history.

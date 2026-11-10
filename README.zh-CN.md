@@ -48,4 +48,6 @@ paseo plugin install /absolute/path/to/paseo-bookmarks
 
 修改后先运行检查，再执行 `paseo plugin reload paseo-bookmarks` 重载，无需单独构建。运行时依赖由 Paseo 提供。
 
+安装 Tabbit 及其 CLI 后，可用 `npm run test:layout` 在三种窗格宽度下验证真实浏览器中的尺寸、滚动和焦点。启动器不在 `~/.local/bin` 时，通过 `TABBIT_CLI` 指定路径。
+
 `client/` 包含面板、导航和网页适配；`server/` 负责本地存储；`shared/` 定义数据与 RPC 契约。测试覆盖持久化、分叉继承、直接移除、布局边界，以及未加载或重新挂载的历史消息定位。

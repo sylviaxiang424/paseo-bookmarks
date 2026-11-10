@@ -1,7 +1,7 @@
 {
   "name": "paseo-bookmarks",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "files": [
     "paseo-plugin.json",
     "OVERVIEW.md",
@@ -18,7 +18,8 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "test:layout": "node scripts/verify-layout.mjs"
   },
   "devDependencies": {
     "@getpaseo/plugin": "0.15.3",
