@@ -1,6 +1,6 @@
 Bookmark individual questions and answers in Paseo. The right-hand Bookmarks panel shows excerpts in conversation order, with actions to jump to the original message or remove a bookmark. Gold ticks mark bookmarked turns on the left timeline.
 
-Hover over a message to reveal its bookmark icon. Open the panel from the workspace header or composer. Clicking an excerpt loads the original message and briefly highlights its text. Bookmarks can also be removed directly from the panel.
+Hover over a message to reveal its bookmark icon. Open the panel from the workspace header. Clicking an excerpt loads the original message and briefly highlights its text. Bookmarks can also be removed directly from the panel.
 
 When forking into a new tab, choose whether to inherit the original conversation's bookmarks. Inherited bookmarks retain their source. Closing the source tab does not break them: the plugin reopens the conversation from history. If the conversation was deleted, the excerpt remains and navigation reports that it is unavailable. Removing an inherited bookmark affects only the current conversation.
 

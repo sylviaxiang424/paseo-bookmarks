@@ -6,7 +6,6 @@ import { BookmarkBridge, BookmarkPanel } from "./client/panel";
 export default function contribute(client: PluginClientContext) {
   const runtime = new BookmarkRuntime(client);
   const lifetime = new AbortController();
-  const pills = new Map<string, PluginButtonRegistration<PluginText>>();
   const headers = new Map<string, PluginButtonRegistration<PluginText>>();
   const Icon = (props: PluginButtonIconProps) => <BookmarkBridge {...props} runtime={runtime} />;
   const stopPanel = client.addWorkspacePanel({ id: "bookmarks", title: messages.message("bookmarks"), icon: "Bookmark", locations: ["explorer"], Component: (props) => <BookmarkPanel {...props} runtime={runtime} /> });
@@ -14,9 +13,8 @@ export default function contribute(client: PluginClientContext) {
   const register = (agent: { id: string; workspaceId?: string | null; title?: string | null }) => {
     if (lifetime.signal.aborted || !agent.workspaceId) return;
     runtime.setTitles([agent]);
-    const workspaceId = agent.workspaceId, agentId = agent.id;
+    const workspaceId = agent.workspaceId;
     if (!headers.has(workspaceId)) headers.set(workspaceId, client.addHeaderButton({ id: "bookmarks", workspaceId, button: { title: messages.message("open"), label: messages.message("bookmarks"), icon: Icon, behavior: { kind: "action", onPress: () => runtime.openPanel(workspaceId) } } }));
-    if (!pills.has(agentId)) pills.set(agentId, client.addComposerPill({ id: "bookmarks", workspaceId, agentId, button: { title: messages.message("open"), label: messages.message("bookmarks"), icon: Icon, behavior: { kind: "action", onPress: () => { runtime.select({ serverId: runtime.hostId, workspaceId, agentId, ownerId: agentId }); runtime.openPanel(workspaceId); } } } }));
   };
   void client.paseo.agents.list({ subscribe: {}, signal: lifetime.signal }).then(({ subscription }) => {
     if (lifetime.signal.aborted) { void subscription.release(); return; }
@@ -34,15 +32,12 @@ export default function contribute(client: PluginClientContext) {
         })().catch(() => undefined);
       },
       update: (message) => {
-        if (message.type !== "agent_update") return;
-        if (message.payload.kind === "upsert") register(message.payload.agent);
-        else { pills.get(message.payload.agentId)?.remove(); pills.delete(message.payload.agentId); }
+        if (message.type === "agent_update" && message.payload.kind === "upsert") register(message.payload.agent);
       },
     });
   }).catch((error) => { if (!lifetime.signal.aborted) console.error("Bookmark directory observation failed", error); });
   return () => {
     lifetime.abort(); runtime.dispose(); stopPanel(); stopCommand();
-    for (const pill of pills.values()) pill.remove();
     for (const header of headers.values()) header.remove();
   };
 }
