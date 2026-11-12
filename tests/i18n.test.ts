@@ -15,7 +15,7 @@ test("registered labels follow the presenting app's live locale, with independen
     } }], logLevel: "silent" });
   const compiled: { exports: any } = { exports: {} };
   new Function("module", "exports", "require", built.outputFiles[0].text)(compiled, compiled.exports, createRequire(import.meta.url));
-  const install = (locale: string) => {
+  const install = (locale: string, emptyDirectory = false) => {
     const i18n = createTestI18n(locale), registrations: Record<string, any> = {};
     const registration = (kind: string) => (value: any) => { registrations[kind] = value; return { remove() {} }; };
     const cleanup = compiled.exports.default({
@@ -23,13 +23,14 @@ test("registered labels follow the presenting app's live locale, with independen
       addWorkspacePanel(value: any) { registrations.panel = value; return () => {}; },
       addCommandCenterItem(value: any) { registrations.command = value; return () => {}; },
       addHeaderButton: registration("header"),
-      paseo: { agents: { async list() { return { subscription: { release() {}, subscribe(listener: any) {
-        listener.snapshot({ entries: [{ agent: { id: "agent-a", workspaceId: "workspace-a" } }], pageInfo: { hasMore: false } });
+      rpc: async () => ({ bookmarks: [] }),
+      paseo: { hosts: { async list() { return { self: { serverId: "host-a" } }; } }, agents: { ref() { return { timeline: { async refetch() { return { entries: [] }; } } }; }, async list() { return { subscription: { release() {}, subscribe(listener: any) {
+        listener.snapshot({ entries: emptyDirectory ? [] : [{ agent: { id: "agent-a", workspaceId: "workspace-a", title: "Original title" } }], pageInfo: { hasMore: false } });
       } } }; } } },
     });
-    return { i18n, registrations, cleanup };
+    return { i18n, registrations, cleanup, runtime: registrations.panel.Component({}).props.runtime };
   };
-  const desktop = install("zh-CN"), browser = install("en");
+  const desktop = install("zh-CN"), browser = install("en"), archived = install("en", true);
   await Promise.resolve();
   try {
     const labels = desktop.registrations;
@@ -45,7 +46,12 @@ test("registered labels follow the presenting app's live locale, with independen
     desktop.i18n.setLocale("fr");
     assert.equal(desktop.i18n.runtime.resolve(labels.panel.title), "Bookmarks");
     assert.equal(desktop.i18n.runtime.locale, "fr", "fallback does not override the host's locale");
+    assert.equal(archived.registrations.header, undefined);
+    archived.runtime.select({ serverId: "host-a", workspaceId: "workspace-a", ownerId: "archived-a", agentId: "archived-a" });
+    assert.equal(archived.registrations.header.workspaceId, "workspace-a", "an active archived chat gets its header even with an empty directory");
+    desktop.runtime.select({ serverId: "host-a", workspaceId: "workspace-a", ownerId: "agent-a", agentId: "agent-a" });
+    assert.equal(desktop.runtime.title("agent-a"), "Original title", "context discovery cannot overwrite a known title");
   } finally {
-    desktop.cleanup(); browser.cleanup(); desktop.i18n.runtime.dispose(); browser.i18n.runtime.dispose();
+    desktop.cleanup(); browser.cleanup(); archived.cleanup(); desktop.i18n.runtime.dispose(); browser.i18n.runtime.dispose(); archived.i18n.runtime.dispose();
   }
 });

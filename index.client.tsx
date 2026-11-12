@@ -10,12 +10,21 @@ export default function contribute(client: PluginClientContext) {
   const Icon = (props: PluginButtonIconProps) => <BookmarkBridge {...props} runtime={runtime} />;
   const stopPanel = client.addWorkspacePanel({ id: "bookmarks", title: messages.message("bookmarks"), icon: "Bookmark", locations: ["explorer"], Component: (props) => <BookmarkPanel {...props} runtime={runtime} /> });
   const stopCommand = client.addCommandCenterItem({ id: "open-bookmarks", title: messages.message("open"), icon: "Bookmark", context: "workspace", keywords: ["bookmark", "书签", "收藏"], onSelect({ workspace }) { runtime.openPanel(workspace.id); } });
-  const register = (agent: { id: string; workspaceId?: string | null; title?: string | null }) => {
+  const stopActive = runtime.subscribe(() => {
+    const active = runtime.getSnapshot().active;
+    if (active?.agentId) register({ id: active.agentId, workspaceId: active.workspaceId });
+  });
+  // Archived conversations are absent from the default agent directory. Start
+  // observation independently so their workspace still gets its header entry.
+  void client.paseo.hosts.list().then(({ self }) => {
+    if (!lifetime.signal.aborted) runtime.attach(undefined, self.serverId);
+  }).catch(error => { if (!lifetime.signal.aborted) console.error("Bookmark host observation failed", error); });
+  function register(agent: { id: string; workspaceId?: string | null; title?: string | null }) {
     if (lifetime.signal.aborted || !agent.workspaceId) return;
-    runtime.setTitles([agent]);
+    if ("title" in agent) runtime.setTitles([agent]);
     const workspaceId = agent.workspaceId;
     if (!headers.has(workspaceId)) headers.set(workspaceId, client.addHeaderButton({ id: "bookmarks", workspaceId, button: { title: messages.message("open"), label: messages.message("bookmarks"), icon: Icon, behavior: { kind: "action", onPress: () => runtime.openPanel(workspaceId) } } }));
-  };
+  }
   void client.paseo.agents.list({ subscribe: {}, signal: lifetime.signal }).then(({ subscription }) => {
     if (lifetime.signal.aborted) { void subscription.release(); return; }
     let generation = 0;
@@ -37,7 +46,7 @@ export default function contribute(client: PluginClientContext) {
     });
   }).catch((error) => { if (!lifetime.signal.aborted) console.error("Bookmark directory observation failed", error); });
   return () => {
-    lifetime.abort(); runtime.dispose(); stopPanel(); stopCommand();
+    lifetime.abort(); stopActive(); runtime.dispose(); stopPanel(); stopCommand();
     for (const header of headers.values()) header.remove();
   };
 }

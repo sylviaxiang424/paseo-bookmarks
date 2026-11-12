@@ -18,7 +18,7 @@ export class BookmarkStore {
     try {
       const data = fileSchema.parse(JSON.parse(await readFile(this.file, "utf8")));
       data.sessions = Object.assign(Object.create(null), data.sessions);
-      for (const session of Object.values(data.sessions)) for (const entry of session.bookmarks) entry.summary = summarize(entry.summary) || entry.summary;
+      for (const session of Object.values(data.sessions)) for (const entry of session.bookmarks) if (!entry.target) entry.summary = summarize(entry.summary) || entry.summary;
       return data;
     }
     catch (error) {

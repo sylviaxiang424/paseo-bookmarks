@@ -5,7 +5,7 @@ import { useAgent, useTranslation } from "@getpaseo/plugin/client";
 import { Icon, Modal, ScrollView } from "@getpaseo/plugin/client/ui";
 import { Platform, Pressable, Text, View } from "react-native";
 import { messages, localizeError } from "./messages";
-import type { Bookmark } from "../shared/bookmarks";
+import { bookmarkLabel, type Bookmark } from "../shared/bookmarks";
 import type { BookmarkRuntime } from "./runtime";
 
 export function BookmarkBridge({ runtime, ...props }: PluginButtonIconProps & { runtime: BookmarkRuntime }) {
@@ -46,7 +46,7 @@ export function BookmarkBridge({ runtime, ...props }: PluginButtonIconProps & { 
       <Modal title={t("turnBookmarks")} icon={<Icon name="Bookmark" size={18} color={colors.foreground} />} open={state.promptChoice.length > 0 && state.active?.workspaceId === props.workspaceId} onOpenChange={(open) => { if (!open) runtime.closePrompt(); }}>
         <Modal.Content>
           {state.promptChoice.map((bookmark) => <Pressable key={bookmark.id} accessibilityRole="button" onPress={() => void runtime.jump(bookmark)} style={{ padding: 12, marginBottom: 8, borderRadius: 7, backgroundColor: colors.surface1 }}>
-            <Text style={{ color: colors.foregroundMuted, fontSize: 11, marginBottom: 5 }}>{t(bookmark.role === "user" ? "question" : "answer")}</Text>
+            <Text style={{ color: colors.foregroundMuted, fontSize: 11, marginBottom: 5 }}>{t(bookmarkLabel(bookmark))}</Text>
             <Text numberOfLines={3} style={{ color: colors.foreground, fontSize: 13, lineHeight: 20 }}>{bookmark.summary}</Text>
           </Pressable>)}
         </Modal.Content>
@@ -94,8 +94,8 @@ export function BookmarkPanel({ runtime, ...props }: PluginWorkspacePanelProps &
         const removing = removal.isPending && removal.variables?.bookmark.id === bookmark.id;
         return <View key={bookmark.id} style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 9, overflow: "hidden", backgroundColor: colors.surface1 }}>
           <View style={{ flexDirection: "row", alignItems: "center", paddingLeft: 12, paddingRight: 6, paddingTop: 7 }}>
-            <Icon name={bookmark.role === "user" ? "MessageCircle" : "Sparkles"} size={12} color={colors.foregroundMuted} />
-            <Text style={{ color: colors.foregroundMuted, fontSize: 11, marginLeft: 6, flex: 1 }}>{t(bookmark.role === "user" ? "question" : "answer")} · {String(index + 1).padStart(2, "0")}</Text>
+            <Icon name={bookmark.target?.kind === "image" ? "Image" : bookmark.target?.kind === "tool" ? bookmark.target.toolType === "command" ? "Terminal" : "Wrench" : bookmark.role === "user" ? "MessageCircle" : "Sparkles"} size={12} color={colors.foregroundMuted} />
+            <Text style={{ color: colors.foregroundMuted, fontSize: 11, marginLeft: 6, flex: 1 }}>{t(bookmarkLabel(bookmark))} · {String(index + 1).padStart(2, "0")}</Text>
             <Pressable accessibilityRole="button" accessibilityLabel={t("removeLabel", { summary: bookmark.summary.slice(0, 40) })} disabled={removing} onPress={() => { if (active) removal.mutate({ ownerId: active.ownerId, bookmark }); }} style={{ padding: 7, borderRadius: 5, opacity: removing ? 0.4 : 1 }}>
               <Icon name="Trash2" size={13} color={colors.foregroundMuted} />
             </Pressable>

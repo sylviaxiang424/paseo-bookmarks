@@ -1,6 +1,7 @@
+import { imageKey, markdownImages, toolSummary } from "../shared/outputs";
 import type { Translate } from "./messages";
 import { Platform } from "react-native";
-import { readableText, summarize, type Bookmark, type BookmarkInput } from "../shared/bookmarks";
+import { readableText, summarize, sameTarget, bookmarkLabel, type Bookmark, type BookmarkInput } from "../shared/bookmarks";
 
 // Paseo 0.15 has no message-action/outline-decoration API. Keep its desktop
 // compatibility boundary here. Never replace a renderer or import host stores.
@@ -8,11 +9,13 @@ import { readableText, summarize, type Bookmark, type BookmarkInput } from "../s
 // including rows absent from the DOM. All metadata is checked before use.
 type Bag = Record<string, unknown>;
 type Rect = { left: number; right: number; top: number; bottom: number; width: number; height: number };
+type Surface = { column: ElementLike; body: ElementLike; bubble?: ElementLike; markdown?: ElementLike };
 type TextNode = { textContent: string | null; parentElement: ElementLike | null };
 type WebEvent = { stopPropagation(): void; preventDefault(): void; key?: string; relatedTarget?: ElementLike | null };
 type ElementLike = {
   [key: string]: unknown;
   parentElement: ElementLike | null;
+  children: ArrayLike<ElementLike>;
   style: { position: string; cssText: string; setProperty(key: string, value: string): void };
   textContent: string | null;
   className: string;
@@ -26,6 +29,7 @@ type ElementLike = {
   getBoundingClientRect(): Rect;
   closest(selector: string): ElementLike | null;
   matches(selector: string): boolean;
+  contains(node: ElementLike): boolean;
   appendChild(child: ElementLike): unknown;
   remove(): void;
   scrollIntoView(options: { block: string; behavior: string }): void;
@@ -40,7 +44,6 @@ type Browser = {
     createElement(tag: string): ElementLike;
     createElementNS(namespace: string, tag: string): ElementLike;
     createTreeWalker(root: ElementLike, show: number): { nextNode(): TextNode | null };
-    createRange(): { selectNodeContents(node: TextNode): void; getBoundingClientRect(): Rect };
     querySelectorAll(selector: string): ArrayLike<ElementLike>;
     addEventListener(name: string, handler: () => void, capture?: boolean): void;
     removeEventListener(name: string, handler: () => void, capture?: boolean): void;
@@ -139,9 +142,24 @@ function messageViewProps(scroll: ElementLike): Bag | undefined {
   return ancestors(scroll).find((props) => Array.isArray(props.items) && props.agentId === expected?.agentId &&
     (!props.serverId || props.serverId === expected?.serverId) && typeof bag(bag(props.viewportRef).current).scrollToMessage === "function");
 }
+function revealTurn(scroll: ElementLike, bookmark: Bookmark, loaded: Bag) {
+  for (const summary of Array.from(scroll.querySelectorAll('[data-testid="turn-summary"]'))) {
+    const row = summary.closest('[data-history-row-id]');
+    if (!row) continue;
+    const item = rowItem(row), cursor = bag(item.timelineCursor);
+    if (cursor.epoch !== bookmark.epoch || !(loaded.turnId ? item.turnId === loaded.turnId : cursor.seq === bookmark.promptSeq)) continue;
+    const props = ancestors(summary).find(props => bag(props.turn).hostId === item.id && typeof props.onExpandedChange === "function");
+    if (props && bag(props.turn).expanded === false) {
+      (props.onExpandedChange as (id: string, expanded: boolean) => void)(String(item.id), true);
+      return;
+    }
+  }
+}
 function matchesTarget(item: Bag, bookmark: Bookmark, rowId?: string | null): boolean {
   const cursor = bag(item.timelineCursor), data = bag(item.data);
   if (cursor.epoch && cursor.epoch !== bookmark.epoch) return false;
+  const tool = bag(bag(item.payload).data);
+  if (bookmark.target?.kind === "tool") return tool.callId === bookmark.messageId;
   const ids = [rowId, item.id, item.messageId, item.clientMessageId, item.sourceId, data.messageId, data.clientMessageId];
   if (ids.some((id) => typeof id === "string" && [bookmark.messageId, ...bookmark.aliases].includes(id))) return true;
   const kind = item.kind === "plugin" ? String(item.itemKind ?? "") : String(item.kind ?? "");
@@ -150,56 +168,91 @@ function matchesTarget(item: Bag, bookmark: Bookmark, rowId?: string | null): bo
   return cursor.epoch === bookmark.epoch && cursor.seq === bookmark.seq && role === bookmark.role && Boolean(text && bookmark.summary && summarize(text).startsWith(bookmark.summary.slice(0, 100)));
 }
 function describe(row: ElementLike, context: ChatContext, promptSeqs: number[], title: string): BookmarkInput | undefined {
-  const item = rowItem(row), data = bag(item.data), cursor = bag(item.timelineCursor);
+  const item = rowItem(row), data = bag(item.data), cursor = bag(item.timelineCursor), tool = bag(bag(item.payload).data);
   const kind = item.kind === "plugin" ? string(item.itemKind) ?? "" : string(item.kind) ?? "";
-  const role = /user|prompt/.test(kind) ? "user" : /assistant|reply/.test(kind) ? "assistant" : undefined;
+  const isTool = kind === "tool_call" && bag(item.payload).source === "agent" && string(tool.callId);
+  const role = isTool ? "assistant" : /user|prompt/.test(kind) ? "user" : /assistant|reply/.test(kind) ? "assistant" : undefined;
   const text = string(item.text) ?? string(data.messageText) ?? string(data.text);
   const seq = cursor.seq, epoch = string(cursor.epoch);
-  const aliases = [...new Set([row.getAttribute("data-message-id"), item.messageId, item.clientMessageId, item.sourceId, data.messageId, data.clientMessageId].filter((value): value is string => typeof value === "string" && value.length > 0))];
-  if (!context.agentId || !role || !text || typeof seq !== "number" || !epoch || !aliases.length) return;
-  const summary = summarize(text);
+  const aliases = [...new Set([isTool ? tool.callId : undefined, row.getAttribute("data-message-id"), item.messageId, item.clientMessageId, item.sourceId, data.messageId, data.clientMessageId].filter((value): value is string => typeof value === "string" && value.length > 0))];
+  if (!context.agentId || !role || (!isTool && !text) || typeof seq !== "number" || !epoch || !aliases.length) return;
+  const summary = isTool ? toolSummary(string(tool.name) ?? "Tool", bag(tool.detail)) : summarize(text!);
   if (!summary) return;
   const timestamp = item.timestamp instanceof Date ? item.timestamp.toISOString() : string(item.timestamp) ?? new Date().toISOString();
-  return { sourceAgentId: context.agentId, sourceWorkspaceId: context.workspaceId, sourceTitle: title.slice(0, 240), messageId: string(item.messageId) ?? string(data.messageId) ?? aliases[0], aliases: aliases.slice(0, 8), role, seq, epoch, promptSeq: promptSeqs.filter((value) => value <= seq).pop() ?? seq, summary, timestamp };
+  return { sourceAgentId: context.agentId, sourceWorkspaceId: context.workspaceId, sourceTitle: title.slice(0, 240), messageId: isTool ? String(tool.callId) : string(item.messageId) ?? string(data.messageId) ?? aliases[0], aliases: aliases.slice(0, 8), role, seq, epoch, promptSeq: promptSeqs.filter((value) => value <= seq).pop() ?? seq, summary, timestamp,
+    ...(isTool ? { target: { kind: "tool", toolType: bag(tool.detail).type === "shell" ? "command" : "tool" } as const } : {}) };
 }
 
-// Read rendered text bounds, rather than the full-width measurement row. This
-// excludes Markdown rules and footer controls without replacing any renderer.
-function messageSurface(row: ElementLike, role: Bookmark["role"], browser: Browser) {
-  const item = rowItem(row), data = bag(item.data);
-  const raw = string(item.text) ?? string(data.messageText) ?? string(data.text) ?? "";
-  const source = readableText(raw), literal = raw.replace(/\s+/g, " ");
-  if (!source) return;
-  const walker = browser.document.createTreeWalker(row, 4); // SHOW_TEXT
-  const range = browser.document.createRange();
-  const nodes: TextNode[] = [];
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    const parent = node.parentElement, text = (node.textContent ?? "").replace(/\s+/g, " ").trim();
-    if (parent && text && (source.includes(text) || literal.includes(text)) && !parent.closest('button,[role="button"],[data-pb-ui],[aria-hidden="true"]')) {
-      range.selectNodeContents(node);
-      const rect = range.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) nodes.push(node);
+function imageTargets(row: ElementLike) {
+  const item = rowItem(row), data = bag(item.data), text = string(item.text) ?? string(data.messageText) ?? string(data.text) ?? "";
+  const descriptors = markdownImages(text), counts = new Map<string, number>();
+  return Array.from(row.querySelectorAll('img')).flatMap(node => {
+    // Host markdown can rewrite local image URLs. Its source map is public DOM
+    // metadata; match the original URI rather than an expiring transport URL.
+    let source = node.getAttribute("data-paseo-markdown-src") ?? node.closest('[data-paseo-markdown-src]')?.getAttribute("data-paseo-markdown-src") ?? node.getAttribute("src") ?? "";
+    const mapping = node.closest('[data-paseo-markdown-image-sources]')?.getAttribute('data-paseo-markdown-image-sources');
+    if (mapping) try {
+      const values = bag(JSON.parse(mapping));
+      source = string(values[source]) ?? Object.keys(values).find(key => values[key] === source || bag(values[key]).uri === source) ?? source;
+    } catch { /* An unknown host format must not invent an image identity. */ }
+    const occurrence = counts.get(source) ?? 0; counts.set(source, occurrence + 1);
+    const key = imageKey(source, occurrence), descriptor = descriptors.find(image => image.key === key);
+    return descriptor ? [{ node, key, alt: descriptor.alt }] : [];
+  });
+}
+
+// Use the host's body container: glyph measurement misses overflowing tables,
+// images and blank lines, and varies with font loading and horizontal scrolling.
+function messageSurface(row: ElementLike, role: Bookmark["role"], browser: Browser): Surface | undefined {
+  let body = row.querySelector('[data-message-text="true"]');
+  if (!body) {
+    const item = rowItem(row), data = bag(item.data);
+    const raw = string(item.text) ?? string(data.messageText) ?? string(data.text) ?? "";
+    const source = readableText(raw), literal = raw.replace(/\s+/g, " ");
+    if (!source) return;
+    const walker = browser.document.createTreeWalker(row, 4), nodes: ElementLike[] = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const parent = node.parentElement, text = (node.textContent ?? "").replace(/\s+/g, " ").trim();
+      if (parent && text && (source.includes(text) || literal.includes(text)) && !parent.closest('button,[role="button"],[data-pb-ui],[aria-hidden="true"]')) nodes.push(parent);
     }
+    body = nodes[0] ?? null;
+    while (body && !nodes.every(node => body!.contains(node))) body = body.parentElement;
+    if (!body || body === row) return;
+    // One paragraph still belongs to its full-width body wrapper.
+    while (body.parentElement && body.parentElement !== row && body.parentElement.parentElement !== row) body = body.parentElement;
   }
-  const first = nodes[0]?.parentElement;
-  if (!first) return;
-  let column = first;
+  let column = body;
   while (column.parentElement && column.parentElement !== row) column = column.parentElement;
   let bubble: ElementLike | undefined;
-  if (role === "user") for (let parent: ElementLike | null = first; parent && parent !== column; parent = parent.parentElement) {
+  if (role === "user") for (let parent: ElementLike | null = body; parent && parent !== column; parent = parent.parentElement) {
     const style = browser.getComputedStyle(parent);
     if (Number.parseFloat(style.borderRadius) > 0 && style.backgroundColor && !/^(?:transparent|rgba\([^)]*,\s*0\))$/.test(style.backgroundColor)) { bubble = parent; break; }
   }
-  return { column, nodes, bubble };
+  return { column, body, bubble, ...(role === "assistant" ? { markdown: body.querySelector('.enrm-text') ?? undefined } : {}) };
 }
-function surfaceBounds(surface: NonNullable<ReturnType<typeof messageSurface>>, browser: Browser): Rect | undefined {
-  if (surface.bubble) return surface.bubble.getBoundingClientRect();
-  const range = browser.document.createRange();
-  const rects = surface.nodes.map((node) => { range.selectNodeContents(node); return range.getBoundingClientRect(); }).filter((rect) => rect.width > 0 && rect.height > 0);
-  if (!rects.length) return;
-  const left = Math.min(...rects.map((rect) => rect.left)), right = Math.max(...rects.map((rect) => rect.right));
-  const top = Math.min(...rects.map((rect) => rect.top)), bottom = Math.max(...rects.map((rect) => rect.bottom));
-  return { left, right, top, bottom, width: right - left, height: bottom - top };
+function targetSurface(row: ElementLike, bookmark: Pick<BookmarkInput, "role" | "target">, browser: Browser): Surface | undefined {
+  if (bookmark.target?.kind === "image") {
+    const image = imageTargets(row).find(image => image.key === (bookmark.target as { key: string }).key)?.node;
+    if (!image) return;
+    const column = messageSurface(row, bookmark.role, browser)?.column ?? row;
+    return { column, body: image, bubble: undefined };
+  }
+  if (bookmark.target?.kind === "tool") {
+    const badge = row.querySelector('[data-testid="tool-call-badge"]');
+    if (!badge) return;
+    return { column: badge.parentElement ?? badge, body: badge, bubble: undefined };
+  }
+  return messageSurface(row, bookmark.role, browser);
+}
+function surfaceBounds(surface: Surface): Rect {
+  const rect = (surface.bubble ?? surface.body).getBoundingClientRect();
+  const blocks = Array.from(surface.markdown?.children ?? []);
+  let top = rect.top, bottom = rect.bottom;
+  // Keep the body width. Only trim leading/trailing Markdown dividers, using
+  // block boxes, so the native separator and footer stay outside the flash.
+  while (blocks[0]?.matches('hr,[data-paseo-markdown-tag="hr"]')) { blocks.shift(); if (blocks[0]) top = blocks[0].getBoundingClientRect().top; }
+  while (blocks.at(-1)?.matches('hr,[data-paseo-markdown-tag="hr"]')) { blocks.pop(); if (blocks.at(-1)) bottom = blocks.at(-1)!.getBoundingClientRect().bottom; }
+  return { left: rect.left, right: rect.right, width: rect.width, top, bottom, height: Math.max(0, bottom - top) };
 }
 
 const CSS = `
@@ -224,11 +277,11 @@ export function createWebAdapter(callbacks: WebCallbacks) {
   const browser = globalThis as unknown as Browser;
   if (!browser.document?.body || !browser.MutationObserver) return undefined;
   const document = browser.document;
-  const actions = new Map<ElementLike, { toolbar: ElementLike; button: ElementLike; icon: ElementLike; enter: () => void; leave: (event: WebEvent) => void; target: BookmarkInput; context: ChatContext }>();
+  const actions = new Map<ElementLike, { toolbar: ElementLike; button: ElementLike; icon: ElementLike; enter: () => void; leave: (event: WebEvent) => void; target: BookmarkInput; context: ChatContext; row: ElementLike }>();
   const ticks = new Map<ElementLike, { title: string | null; click: (event: WebEvent) => void; entries: readonly Bookmark[] }>();
   let disposed = false, scheduled: ReturnType<typeof setTimeout> | undefined;
   let jumpVersion = 0;
-  let highlight: { node: ElementLike; row: ElementLike; role: Bookmark["role"]; timer: ReturnType<typeof setTimeout> } | undefined;
+  let highlight: { node: ElementLike; row: ElementLike; target: Bookmark; timer: ReturnType<typeof setTimeout> } | undefined;
   let layoutScroll: ElementLike | undefined, layoutFrame: number | undefined, layoutFallback: ReturnType<typeof setTimeout> | undefined;
   const clearHighlight = () => {
     if (!highlight) return;
@@ -264,10 +317,10 @@ export function createWebAdapter(callbacks: WebCallbacks) {
   const positionHighlight = (left: number, top: number, width: number) => {
     if (!highlight) return;
     if (highlight.row.isConnected === false || highlight.row.closest('[data-testid="agent-chat-scroll"]') !== layoutScroll) { clearHighlight(); return; }
-    const surface = messageSurface(highlight.row, highlight.role, browser), bounds = surface && surfaceBounds(surface, browser);
-    const question = highlight.role === "user";
+    const surface = targetSurface(highlight.row, highlight.target, browser), bounds = surface && surfaceBounds(surface);
+    const question = highlight.target.role === "user" && !highlight.target.target;
     if (!bounds || (question && !surface?.bubble)) { clearHighlight(); return; }
-    const paddingX = question ? 0 : 6, paddingY = question ? 0 : 4;
+    const paddingX = 0, paddingY = 0;
     const start = Math.max(0, bounds.left - left - paddingX), end = Math.min(width, bounds.right - left + paddingX);
     highlight.node.style.cssText = `left:${start}px;top:${bounds.top - top - paddingY}px;width:${Math.max(0, end - start)}px;height:${bounds.height + paddingY * 2}px`;
     if (question && surface?.bubble) highlight.node.style.setProperty("border-radius", browser.getComputedStyle(surface.bubble).borderRadius);
@@ -279,13 +332,15 @@ export function createWebAdapter(callbacks: WebCallbacks) {
     const blocked = Array.from(document.querySelectorAll('[role="dialog"],[aria-modal="true"],[role="menu"]')).some(visible);
     if (!viewport?.width || !viewport.height || blocked) { overlay.style.setProperty("visibility", "hidden"); return; }
     const left = viewport.left ?? 0, top = viewport.top ?? 0, right = left + viewport.width;
+    const placed: Array<{ x: number; y: number; width: number }> = [];
     overlay.style.cssText = `left:${left}px;top:${top}px;width:${viewport.width}px;height:${viewport.height}px`;
-    for (const [row, action] of actions) {
+    for (const action of actions.values()) {
+      const { row } = action;
       const rowBounds = row.getBoundingClientRect();
       if (row.isConnected === false || rowBounds.bottom <= top || rowBounds.top >= top + viewport.height) {
         action.toolbar.style.setProperty("visibility", "hidden"); continue;
       }
-      const surface = messageSurface(row, action.target.role, browser), bounds = surface && surfaceBounds(surface, browser);
+      const surface = targetSurface(row, action.target, browser), bounds = surface && surfaceBounds(surface);
       if (!surface || !bounds?.width || !bounds.height) {
         action.toolbar.style.setProperty("visibility", "hidden"); continue;
       }
@@ -294,18 +349,25 @@ export function createWebAdapter(callbacks: WebCallbacks) {
       const gutter = right - bounds.right;
       if (gutter < 16) { action.toolbar.style.setProperty("visibility", "hidden"); continue; }
       const iconSize = Math.min(16, gutter - 4), buttonWidth = Math.min(26, gutter);
-      let y = bounds.top + (action.target.role === "user" ? 4 : -4);
-      if (action.target.role === "assistant") {
+      let y = bounds.top + 4;
+      if (action.target.role === "assistant" && !action.target.target) {
         const rule = Array.from(surface.column.querySelectorAll('hr,[role="separator"],div')).map(node => ({ node, rect: node.getBoundingClientRect() }))
           .filter(({ node, rect }) => !node.textContent?.trim() && rect.height > 0 && rect.height <= 2.5 && rect.width >= bounds.width * 0.5 && rect.bottom <= bounds.top)
           .sort((a, b) => b.rect.bottom - a.rect.bottom)[0];
         if (rule) y = rule.rect.bottom + 6;
       }
+      const anchor = action.target.role === "assistant" && !action.target.target ? surface.column.getBoundingClientRect().right : bounds.right;
+      const x = Math.max(left, Math.min(anchor + 8, right - buttonWidth));
+      // Image-only answers can share their first image's top edge. Keep the
+      // whole-answer and individual-image controls apart in the existing gutter.
+      if (action.target.target?.kind === "image") for (const previous of placed) {
+        if (x < previous.x + previous.width && x + buttonWidth > previous.x && y < previous.y + 24 && y + 24 > previous.y) y = previous.y + 28;
+      }
       // Clipped, offscreen controls must not remain keyboard-focusable: focusing
       // them can scroll an overflow:hidden container internally.
       if (y < top || y + 24 > top + viewport.height) { action.toolbar.style.setProperty("visibility", "hidden"); continue; }
-      const anchor = action.target.role === "assistant" ? surface.column.getBoundingClientRect().right : bounds.right;
-      action.button.style.setProperty("left", `${Math.max(0, Math.min(anchor + 8, right - buttonWidth) - left)}px`);
+      placed.push({ x, y, width: buttonWidth });
+      action.button.style.setProperty("left", `${x - left}px`);
       action.button.style.setProperty("top", `${y - top}px`);
       action.button.style.setProperty("width", `${buttonWidth}px`);
       action.icon.setAttribute("width", String(iconSize)); action.icon.setAttribute("height", String(iconSize));
@@ -319,13 +381,13 @@ export function createWebAdapter(callbacks: WebCallbacks) {
     else layoutFallback = setTimeout(() => { layoutFallback = undefined; positionActions(); }, 0);
   };
   const resizeObserver = browser.ResizeObserver ? new browser.ResizeObserver(requestLayout) : undefined;
-  const clearAction = (row: ElementLike) => {
-    const action = actions.get(row);
+  const clearAction = (anchor: ElementLike) => {
+    const action = actions.get(anchor);
     if (!action) return;
     action.toolbar.remove();
-    row.removeEventListener("pointerenter", action.enter); row.removeEventListener("pointerleave", action.leave);
-    resizeObserver?.unobserve(row);
-    actions.delete(row);
+    anchor.removeEventListener("pointerenter", action.enter); anchor.removeEventListener("pointerleave", action.leave);
+    resizeObserver?.unobserve(anchor);
+    actions.delete(anchor);
   };
   const clearTick = (tick: ElementLike) => {
     const state = ticks.get(tick); if (!state) return;
@@ -380,38 +442,44 @@ export function createWebAdapter(callbacks: WebCallbacks) {
       for (const row of Array.from(scroll.querySelectorAll("[data-history-row-id][data-message-id]"))) {
         const target = describe(row, current, promptSeqs, callbacks.title(current.agentId));
         if (!target || seenMessages.has(target.messageId)) continue;
-        seenMessages.add(target.messageId); seenRows.add(row);
-        let action = actions.get(row);
-        if (!action) {
-          const toolbar = document.createElement("div");
-          toolbar.className = "pb-message-tools"; toolbar.setAttribute("data-pb-ui", "action-bar");
-          const button = document.createElement("button");
-          button.className = "pb-message-action"; button.setAttribute("type", "button"); button.setAttribute("data-pb-ui", "action");
-          const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-          for (const [name, value] of Object.entries({ width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.75", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true", focusable: "false" })) icon.setAttribute(name, value);
-          const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-          path.setAttribute("d", "M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z");
-          icon.appendChild(path); button.appendChild(icon); toolbar.appendChild(button);
-          const enter = () => button.setAttribute("data-pb-hover", "true");
-          const leave = (event: WebEvent) => { if (event.relatedTarget?.closest?.('.pb-message-action') !== button) button.removeAttribute("data-pb-hover"); };
-          row.addEventListener("pointerenter", enter); row.addEventListener("pointerleave", leave);
-          button.addEventListener("pointerleave", (event) => { if (event.relatedTarget?.closest?.('[data-history-row-id]') !== row) button.removeAttribute("data-pb-hover"); });
-          if (row.matches(":hover")) enter();
-          const state = { toolbar, button, icon, enter, leave, target, context: current };
-          action = state; actions.set(row, state);
-          button.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); void callbacks.toggle(state.context, state.target).catch(() => callbacks.error("BOOKMARKS_SAVE_FAILED")); });
-          // Mouse clicks should not steal composer focus or invoke native focus scrolling.
-          // Keyboard focus/activation remains available through the native button.
-          button.addEventListener("mousedown", (event) => event.preventDefault());
-          overlay.appendChild(toolbar); resizeObserver?.observe(row);
-        }
-        action.target = target; action.context = current;
-        action.button.setAttribute("data-pb-message-id", target.messageId); colors(action.toolbar);
-        const selected = saved.some((entry) => entry.sourceAgentId === target.sourceAgentId && (entry.messageId === target.messageId || entry.aliases.some((id) => target.aliases.includes(id))));
-        const label = callbacks.t(selected ? "remove" : "add");
-        if (action.button.getAttribute("aria-label") !== label) {
-          action.button.setAttribute("aria-label", label); action.button.setAttribute("title", label);
-          action.button.setAttribute("aria-pressed", String(selected)); action.icon.setAttribute("fill", selected ? "currentColor" : "none");
+        seenMessages.add(target.messageId);
+        const entries = [{ anchor: row, target }, ...(!target.target ? imageTargets(row).map(image => ({ anchor: image.node, target: { ...target, target: { kind: "image", key: image.key } as const, summary: summarize(image.alt) || callbacks.t("image") } })) : [])];
+        for (const { anchor, target } of entries) {
+          seenRows.add(anchor);
+          let action = actions.get(anchor);
+          if (!action) {
+            const toolbar = document.createElement("div");
+            toolbar.className = "pb-message-tools"; toolbar.setAttribute("data-pb-ui", "action-bar");
+            const button = document.createElement("button");
+            button.className = "pb-message-action"; button.setAttribute("type", "button"); button.setAttribute("data-pb-ui", "action");
+            const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            for (const [name, value] of Object.entries({ width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", "stroke-width": "1.75", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true", focusable: "false" })) icon.setAttribute(name, value);
+            const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            path.setAttribute("d", "M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z");
+            icon.appendChild(path); button.appendChild(icon); toolbar.appendChild(button);
+            const enter = () => button.setAttribute("data-pb-hover", "true");
+            const leave = (event: WebEvent) => { if (event.relatedTarget?.closest?.('.pb-message-action') !== button) button.removeAttribute("data-pb-hover"); };
+            anchor.addEventListener("pointerenter", enter); anchor.addEventListener("pointerleave", leave);
+            button.addEventListener("pointerleave", (event) => { if (event.relatedTarget?.closest?.('[data-history-row-id]') !== row) button.removeAttribute("data-pb-hover"); });
+            if (anchor.matches(":hover")) enter();
+            const state = { toolbar, button, icon, enter, leave, target, context: current, row };
+            action = state; actions.set(anchor, state);
+            button.addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); void callbacks.toggle(state.context, state.target).catch(() => callbacks.error("BOOKMARKS_SAVE_FAILED")); });
+            // Mouse clicks should not steal composer focus or invoke native focus scrolling.
+            // Keyboard focus/activation remains available through the native button.
+            button.addEventListener("mousedown", (event) => event.preventDefault());
+            overlay.appendChild(toolbar); resizeObserver?.observe(anchor);
+          }
+          action.target = target; action.context = current; action.row = row;
+          action.button.setAttribute("data-pb-message-id", target.messageId); action.button.setAttribute("data-pb-kind", bookmarkLabel(target));
+          if (target.target?.kind === "image") action.button.setAttribute("data-pb-image-key", target.target.key);
+          colors(action.toolbar);
+          const selected = saved.some((entry) => sameTarget(entry, target));
+          const label = callbacks.t(selected ? "remove" : "add");
+          if (action.button.getAttribute("aria-label") !== label) {
+            action.button.setAttribute("aria-label", label); action.button.setAttribute("title", label);
+            action.button.setAttribute("aria-pressed", String(selected)); action.icon.setAttribute("fill", selected ? "currentColor" : "none");
+          }
         }
       }
       for (const tick of railTicks) {
@@ -425,7 +493,7 @@ export function createWebAdapter(callbacks: WebCallbacks) {
           tick.addEventListener("click", value.click, true); ticks.set(tick, value); state = value;
         }
         state.entries = entries;
-        const title = entries.map((entry) => `${callbacks.t(entry.role === "user" ? "question" : "answer")} · ${entry.summary.slice(0, 120)}`).join("\n");
+        const title = entries.map((entry) => `${callbacks.t(bookmarkLabel(entry))} · ${entry.summary.slice(0, 120)}`).join("\n");
         tick.setAttribute("data-pb-count", String(entries.length));
         if (tick.getAttribute("title") !== title) tick.setAttribute("title", title);
       }
@@ -474,6 +542,7 @@ export function createWebAdapter(callbacks: WebCallbacks) {
             // Chat find's reveal path also expands folded turns, unlike the
             // outline path which only loads the history window.
             try {
+              revealTurn(scroll, bookmark, loaded!);
               if (typeof view.revealLoadedMessage === "function") view.revealLoadedMessage(id);
               if (typeof viewport.scrollToMessage === "function") viewport.scrollToMessage(id);
             } catch { /* A concurrent unmount is retried against fresh props. */ }
@@ -487,31 +556,40 @@ export function createWebAdapter(callbacks: WebCallbacks) {
             nextOutline = Date.now() + 1200; target = mounted();
           }
         }
-        if (target) {
-          const rect = target.getBoundingClientRect(), container = scroll.getBoundingClientRect();
-          const inView = rect.height > 0 && rect.bottom > container.top && rect.top < container.bottom;
-          if (positioned !== target || (!inView && Date.now() >= nextPosition)) {
+        if (target && bookmark.target?.kind === "tool") {
+          const badge = target.querySelector('[data-testid="tool-call-badge"]');
+          const expansion = badge && ancestors(badge).find(props => typeof props.isExpanded === "boolean" && typeof props.onToggle === "function");
+          if (expansion?.isExpanded === false) { try { (expansion.onToggle as () => void)(); } catch {} await new Promise<void>(resolve => setTimeout(resolve, 100)); continue; }
+        }
+        const anchor = target && (bookmark.target?.kind === "image" ? imageTargets(target).find(image => image.key === (bookmark.target as { key: string }).key)?.node : target);
+        if (target && anchor) {
+          const rect = anchor.getBoundingClientRect(), container = scroll.getBoundingClientRect();
+          const image = bookmark.target?.kind === "image";
+          const inView = rect.height > 0 && (image && rect.height <= container.height
+            ? rect.top >= container.top - 1 && rect.bottom <= container.bottom + 1
+            : rect.bottom > container.top && rect.top < container.bottom);
+          if (positioned !== anchor || (!inView && Date.now() >= nextPosition)) {
             const id = target.getAttribute("data-message-id");
             try {
-              if (id && typeof viewport.scrollToMessage === "function") viewport.scrollToMessage(id);
-              else target.scrollIntoView({ block: "start", behavior: "auto" });
+              if (!bookmark.target && id && typeof viewport.scrollToMessage === "function") viewport.scrollToMessage(id);
+              else anchor.scrollIntoView({ block: image && rect.height <= container.height ? "center" : "start", behavior: "auto" });
             } catch { positioned = undefined; await new Promise<void>((resolve) => setTimeout(resolve, 100)); continue; }
-            positioned = target; positionedAt = Date.now(); nextPosition = positionedAt + 800; stablePasses = 0;
+            positioned = anchor; positionedAt = Date.now(); nextPosition = positionedAt + 800; stablePasses = 0;
           } else if (inView && Date.now() - positionedAt >= 100) stablePasses++;
           else stablePasses = 0;
           // Confirm the row remains mounted and visible after React and the
           // native scroll controller have had a chance to settle.
           if (stablePasses < 2) { await new Promise<void>((resolve) => setTimeout(resolve, 100)); continue; }
           clearHighlight();
-          const surface = messageSurface(target, bookmark.role, browser), bounds = surface && surfaceBounds(surface, browser);
-          const question = bookmark.role === "user";
+          const surface = targetSurface(target, bookmark, browser), bounds = surface && surfaceBounds(surface);
+          const question = bookmark.role === "user" && !bookmark.target;
           // A question may only flash its actual bubble. Never fall back to a
           // text/row rectangle when that bubble cannot be identified.
           if (bounds && (!question || surface?.bubble)) {
             const layer = document.createElement("div");
             layer.className = "pb-message-highlight"; layer.setAttribute("data-pb-ui", "highlight"); layer.setAttribute("aria-hidden", "true");
             overlay.appendChild(layer);
-            highlight = { node: layer, row: target, role: bookmark.role, timer: setTimeout(clearHighlight, 1800) };
+            highlight = { node: layer, row: target, target: bookmark, timer: setTimeout(clearHighlight, 1800) };
             positionActions();
           }
           return true;

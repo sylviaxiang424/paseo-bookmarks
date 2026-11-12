@@ -9,6 +9,10 @@ export const bookmarkInputSchema = z.object({
   messageId: z.string().min(1).max(500),
   aliases: z.array(z.string().max(500)).max(8).default([]),
   role: z.enum(["user", "assistant"]),
+  target: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("tool"), toolType: z.enum(["command", "tool"]) }),
+    z.object({ kind: z.literal("image"), key: z.string().min(1).max(100) }),
+  ]).optional(),
   seq: z.number().int().nonnegative(),
   epoch: z.string().max(240),
   promptSeq: z.number().int().nonnegative(),
@@ -59,8 +63,21 @@ export const bindDraft = defineRpc({
   name: "bookmarks.bind-draft", input: z.object({ draftId: ownerSchema, agentId: ownerSchema }), output: sessionSchema,
 });
 
-export function bookmarkId(input: Pick<BookmarkInput, "sourceAgentId" | "messageId">): string {
-  return JSON.stringify([input.sourceAgentId, input.messageId]);
+export function bookmarkId(input: Pick<BookmarkInput, "sourceAgentId" | "messageId" | "target">): string {
+  const identity = [input.sourceAgentId, input.messageId];
+  if (input.target?.kind === "image") identity.push("image", input.target.key);
+  else if (input.target?.kind === "tool") identity.push("tool");
+  return JSON.stringify(identity);
+}
+
+export function sameTarget(left: BookmarkInput, right: BookmarkInput): boolean {
+  if (left.sourceAgentId !== right.sourceAgentId || left.target?.kind !== right.target?.kind) return false;
+  if (left.target?.kind === "image" && right.target?.kind === "image" && left.target.key !== right.target.key) return false;
+  return left.messageId === right.messageId || left.aliases.some(id => right.aliases.includes(id));
+}
+
+export function bookmarkLabel(entry: Pick<BookmarkInput, "role" | "target">) {
+  return entry.target?.kind === "image" ? "image" : entry.target?.kind === "tool" ? entry.target.toolType === "command" ? "command" : "tool" : entry.role === "user" ? "question" : "answer";
 }
 
 export function readableText(text: string): string {

@@ -74,11 +74,13 @@ for(const width of [360,640,1280]){
     if(controlBounds.left<controlBounds.right) throw new Error(JSON.stringify(controlBounds));
     await button.click();
     await page.waitForFunction(count=>layoutFixture.toggles===count,++expectedToggles);
+    await expect(button).toHaveAttribute('aria-pressed','true');
     await expect(page.getByRole('textbox',{name:'Message composer'})).toBeFocused();
     await page.evaluate(()=>layoutFixture.renderAgain());
     expect(await page.evaluate(()=>layoutFixture.measure())).toEqual(clickBefore);
     await button.focus(); await button.press('Enter');
     await page.waitForFunction(count=>layoutFixture.toggles===count,++expectedToggles);
+    await expect(button).toHaveAttribute('aria-pressed','false');
     expect(await page.evaluate(()=>layoutFixture.measure())).toEqual(clickBefore);
     await page.getByRole('textbox',{name:'Message composer'}).focus();
     await page.mouse.move(10,10);

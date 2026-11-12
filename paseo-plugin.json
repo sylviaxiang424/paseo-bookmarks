@@ -1,7 +1,7 @@
 {
   "id": "paseo-bookmarks",
   "name": "Conversation bookmarks",
-  "description": "Bookmark questions and answers, navigate from a sidebar or timeline, and optionally inherit bookmarks when forking.",
+  "description": "Bookmark messages, commands, tool results and individual images, with sidebar navigation and optional fork inheritance.",
   "media": [
     "assets/bookmarks-panel.en.png",
     "assets/bookmarks-inheritance.en.png",
@@ -13,7 +13,7 @@
   "translations": {
     "zh-CN": {
       "name": "对话书签",
-      "description": "收藏问题和回答，在右侧查看摘要、跳转或移除；分叉时可选择继承原对话书签。"
+      "description": "收藏消息、独立命令、工具结果和图片，在右侧查看摘要、定位或移除；支持分叉继承。"
     }
   }
 }

@@ -4,6 +4,7 @@ export const en = {
   open: "Open conversation bookmarks",
   add: "Add bookmark",
   remove: "Remove bookmark",
+  image: "Image", command: "Command", tool: "Tool output",
   question: "Question",
   answer: "Answer",
   untitled: "Untitled conversation",
@@ -23,7 +24,7 @@ export const en = {
   chooseInheritance: "Choose inheritance",
   loading: "Loading bookmarks…",
   empty: "No bookmarks yet",
-  emptyHint: "Hover over a question or answer and click its bookmark icon.\nBookmarks appear here in conversation order.",
+  emptyHint: "Hover over a message, tool result or image and click its bookmark icon.\nBookmarks appear here in conversation order.",
   desktopOnly: "This version supports desktop and web clients.",
   removeLabel: "Remove bookmark: {{summary}}",
   jumpLabel: "Jump to bookmark: {{summary}}",
@@ -48,6 +49,7 @@ export const en = {
 
 export const zhCN = {
   bookmarks: "书签", title: "对话书签", open: "打开对话书签", add: "添加书签", remove: "移除书签",
+  image: "图片", command: "命令", tool: "工具输出",
   question: "问题", answer: "回答", untitled: "未命名对话", sourceConversation: "原对话",
   forkTitle: "继承原对话的书签？",
   forkQuestion: "这个新标签页分叉自“{{title}}”。是否继承它已有的书签？",
@@ -56,7 +58,7 @@ export const zhCN = {
   turnBookmarks: "这一轮的书签", newFork: "新分叉对话", selectConversation: "选择一个对话标签页",
   dismissError: "关闭提示", pendingFork: "这个分叉尚未选择是否继承书签。", chooseInheritance: "选择继承方式",
   loading: "正在读取书签…", empty: "还没有书签",
-  emptyHint: "移到一条问题或回答上，点击右侧的书签图标收藏。\n书签会按对话顺序显示在这里。",
+  emptyHint: "移到一条消息、工具结果或图片上，点击右侧的书签图标收藏。\n书签会按对话顺序显示在这里。",
   desktopOnly: "当前版本支持桌面和网页客户端。", removeLabel: "移除书签：{{summary}}",
   jumpLabel: "跳转到书签：{{summary}}", jumpSourceLabel: "跳转到原对话的书签：{{summary}}",
   from: "来自 {{title}}", jumping: "正在定位原消息…", footer: "点击摘要定位 · 点击垃圾桶移除",

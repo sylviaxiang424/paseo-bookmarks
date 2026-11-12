@@ -60,7 +60,7 @@ test("desktop adapter adds and removes bookmarks, marks the rail, jumps to unloa
     if (role === "user") {
       body.style.backgroundColor = "rgb(230,230,232)"; body.style.borderRadius = "16px 2px 16px 16px";
       box(body, 500, 4, 600, 70); box(prose, 516, 20, 568, 40);
-    } else { box(body, 100, 30, 1000, 50); box(prose, 100, 30, 1000, 50); }
+    } else { box(body, 100, 30, 1000, 50); box(prose, 100, 30, 100, 50); }
     body.appendChild(prose); content.appendChild(body);
     const footer = window.document.createElement("button"); footer.textContent = "工作了 4m";
     content.appendChild(footer);
@@ -108,9 +108,10 @@ test("desktop adapter adds and removes bookmarks, marks the rail, jumps to unloa
     tick.click(); await wait();
     assert.equal(jumpedSeq, 0, "mounted messages do not depend on the outline"); assert.equal(scrolledTo, "message-2");
     const highlight = window.document.querySelector(".pb-message-highlight")!;
-    assert.equal(highlight.style.top, "26px", "highlight starts below the separator at y=10");
-    assert.equal(highlight.style.height, "58px", "highlight ends before footer controls");
-    assert.equal(highlight.style.left, "94px", "highlight stays inside the centered text area");
+    assert.equal(highlight.style.top, "30px", "highlight starts below the separator at y=10");
+    assert.equal(highlight.style.height, "50px", "highlight ends before footer controls");
+    assert.equal(highlight.style.left, "100px", "highlight stays inside the centered text area");
+    assert.equal(highlight.style.width, "1000px", "short text still highlights the whole body container");
     assert.equal(row.hasAttribute("data-pb-highlight"), false, "the full-width row stays undecorated");
     await adapter.jump({ ...saved[0], role: "user", seq: 3, messageId: "message-3", aliases: ["message-3"], summary: "问题 3" });
     const bubbleHighlight = window.document.querySelector(".pb-message-highlight")!;

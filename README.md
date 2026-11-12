@@ -2,13 +2,13 @@
 
 [简体中文](README.zh-CN.md)
 
-Save questions and answers in Paseo, then find them from a right-hand bookmark panel or the conversation timeline.
+Save messages, tool results and individual images in Paseo, then find them from a right-hand bookmark panel or the conversation timeline.
 
 ![Bookmarks beside a sample reading conversation, with timeline marks and excerpts](assets/bookmarks-panel.en.png)
 
 ## Features
 
-- Bookmark a question or answer with one click.
+- Bookmark a question, answer, individual command execution, tool result or image. A command and its output are saved together; each image can be saved separately.
 - Read short excerpts in the right-hand panel, ordered by conversation position.
 - Click an excerpt to return to the message and briefly highlight it. Remove bookmarks directly from the panel.
 - Find bookmarked turns through gold ticks on the left timeline.
@@ -32,12 +32,12 @@ paseo plugin add git:sylviaxiang424/paseo-bookmarks
 
 1. Hover over a message and click its bookmark icon. For answers it sits just below the leading divider; for questions it sits beside the bubble's upper-right corner. Saved icons stay gold.
 2. Click **Bookmarks** in the workspace header to open the right panel.
-3. Click an excerpt to jump, or the trash icon to remove it. Questions highlight only inside their bubble; answers highlight their text, excluding dividers and controls.
+3. Click an excerpt to jump, or the trash icon to remove it. Questions highlight only inside their bubble; answers highlight the full body width, excluding leading dividers and controls. Tool bookmarks expand the owning turn and result details; image bookmarks jump to the specific image.
 4. When branching into a new tab, choose **Inherit bookmarks** or **Do not inherit**.
 
 ## Data and compatibility
 
-Bookmarks are stored on the connected daemon host at `$PASEO_HOME/plugin-data/paseo-bookmarks/bookmarks.json` (`~/.paseo` when `PASEO_HOME` is unset). They contain message identifiers, source information and a local text excerpt of up to 800 characters. Excerpts are not AI-generated. The plugin does not contact an external service or require an account or token. Uninstalling does not delete this data file.
+Bookmarks are stored on the connected daemon host at `$PASEO_HOME/plugin-data/paseo-bookmarks/bookmarks.json` (`~/.paseo` when `PASEO_HOME` is unset). They contain message and output identifiers, source information and a local text excerpt of up to 800 characters. Excerpts are not AI-generated. The plugin does not contact an external service or require an account or token. Uninstalling does not delete this data file.
 
 The panel and navigation use Paseo's plugin API. Message buttons, timeline marks and precise jumps also depend on a compatibility adapter for Paseo 0.15.x. They may need updates when Paseo changes. Jumps wait for history to load and retry once if needed; an inaccessible source or an incompatible host interface can still prevent navigation.
 

@@ -145,3 +145,21 @@ test("a blank focused pane cannot reuse an explicitly unfocused chat's context",
   await until(() => runtime.getSnapshot().active === null);
   assert.deepEqual(runtime.getSnapshot().session.bookmarks, []);
 }));
+
+test("tool bookmarks re-resolve the call ID after timeline replacement rather than reuse the old sequence", () => fixture(async ({ runtime, canonical }) => {
+  canonical.epoch = "replaced-epoch";
+  canonical.entries = [{ seqStart: 45, item: { type: "tool_call", callId: "call-stable", detail: { type: "shell", command: "printf TARGET" }, name: "shell" } }];
+  const seen: any[] = [];
+  runtime.adapter.jump = async (target: any) => { seen.push(target); return true; };
+  await runtime.jump({ ...bookmark, messageId: "call-stable", aliases: ["call-stable"], target: { kind: "tool", toolType: "command" } });
+  assert.equal(seen.length, 1); assert.equal(seen[0].messageId, "call-stable");
+  assert.equal(seen[0].seq, 45); assert.equal(seen[0].epoch, "replaced-epoch");
+  assert.equal(runtime.getSnapshot().error, null);
+}));
+
+test("an image removed from a surviving answer cannot jump to its sibling or the parent answer", () => fixture(async ({ runtime, canonical }) => {
+  canonical.entries[0].item.text = '![remaining](https://example.test/other.png)';
+  let jumped = false; runtime.adapter.jump = async () => { jumped = true; return true; };
+  await runtime.jump({ ...bookmark, target: { kind: "image", key: "missing:0" } });
+  assert.equal(jumped, false); assert.equal(runtime.getSnapshot().error, "BOOKMARKS_MESSAGE_UNAVAILABLE");
+}));

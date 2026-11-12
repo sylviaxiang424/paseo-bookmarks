@@ -88,3 +88,22 @@ test("existing flattened rule prefixes are cleaned while source identity and fla
   assert.equal(restored.bookmarks[0].id, bookmarkId(target()));
   assert.equal(restored.bookmarks[0].sourceAgentId, "agent-a");
 }));
+
+test("message, sibling images and tool results survive restart and inherit without identity collisions", () => fixture(async (store, file) => {
+  const message = target();
+  const image1 = { ...message, target: { kind: "image", key: "first:0" } as const, summary: "image_one" };
+  const image2 = { ...message, target: { kind: "image", key: "second:0" } as const, summary: "image_two" };
+  const tool = { ...target(2), messageId: "call-1", aliases: ["call-1"], target: { kind: "tool", toolType: "command" } as const, summary: "printf RESULT_ONE --help" };
+  await Promise.all([message, image1, image2, tool].map(entry => store.save("agent-a", entry)));
+  const restored = new BookmarkStore(file);
+  assert.equal((await restored.list("agent-a")).bookmarks.length, 4);
+  assert.equal((await restored.list("agent-a")).bookmarks.find(entry => entry.target?.kind === "tool")?.summary, tool.summary);
+  await restored.inherit("draft:fork", "agent-a", true); await restored.bind("fork", "agent-b");
+  await restored.remove("agent-b", bookmarkId(image1));
+  const inherited = (await restored.list("agent-b")).bookmarks;
+  assert.equal(inherited.length, 3);
+  assert.ok(inherited.some(entry => entry.id === bookmarkId(image2)));
+  assert.ok(inherited.some(entry => entry.id === bookmarkId(message)));
+  assert.ok(inherited.every(entry => entry.sourceAgentId === "agent-a"));
+  assert.equal((await restored.list("agent-a")).bookmarks.length, 4);
+}));

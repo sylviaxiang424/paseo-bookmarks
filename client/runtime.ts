@@ -1,6 +1,7 @@
 import type { PluginClientContext, PluginWorkspacePanelProps } from "@getpaseo/plugin/client";
 import type { QueryClient } from "@tanstack/react-query";
-import { bookmarkId, bindDraft, emptySession, inheritBookmarks, listBookmarks, removeBookmark, saveBookmark, summarize, type Bookmark, type BookmarkInput, type BookmarkSession } from "../shared/bookmarks";
+import { bookmarkId, sameTarget, bindDraft, emptySession, inheritBookmarks, listBookmarks, removeBookmark, saveBookmark, summarize, type Bookmark, type BookmarkInput, type BookmarkSession } from "../shared/bookmarks";
+import { markdownImages } from "../shared/outputs";
 import { messages, type Translate } from "./messages";
 import { createWebAdapter, type ChatContext, type ForkSource } from "./web";
 
@@ -49,8 +50,9 @@ export class BookmarkRuntime {
   refreshLanguage() { this.adapter?.refresh(); }
   setTitles(entries: readonly { id: string; title?: string | null }[]) { for (const entry of entries) this.titles.set(entry.id, entry.title || ""); }
   title = (agentId: string) => this.titles.get(agentId) || this.t(this.titles.has(agentId) ? "untitled" : "sourceConversation");
-  attach(cache: QueryClient, hostId: string) {
-    this.cache = cache; this.hostId = hostId;
+  attach(cache: QueryClient | undefined, hostId: string) {
+    if (cache) this.cache = cache;
+    this.hostId = hostId;
     if (!this.started && !this.stopped) {
       this.started = true;
       this.adapter = createWebAdapter({
@@ -120,7 +122,7 @@ export class BookmarkRuntime {
     this.pending.add(pendingKey);
     try {
       const session = await this.load(context.ownerId);
-      const existing = session?.bookmarks.find((entry) => entry.sourceAgentId === target.sourceAgentId && (entry.messageId === target.messageId || entry.aliases.some((id) => target.aliases.includes(id))));
+      const existing = session?.bookmarks.find((entry) => sameTarget(entry, target));
       const next = existing ? await this.client.rpc(removeBookmark, { ownerId: context.ownerId, bookmarkId: existing.id }) : await this.client.rpc(saveBookmark, { ownerId: context.ownerId, bookmark: target });
       this.commit(context.ownerId, next);
       if (!existing) this.openPanel(context.workspaceId);
@@ -181,7 +183,9 @@ export class BookmarkRuntime {
     if (page.error) throw new Error("BOOKMARKS_SOURCE_READ_FAILED");
     const matches = (entry: typeof page.entries[number]) => {
       const item = entry.item;
+      if (bookmark.target?.kind === "tool") return item.type === "tool_call" && (item.callId === bookmark.messageId || bookmark.aliases.includes(item.callId));
       if (item.type !== (bookmark.role === "user" ? "user_message" : "assistant_message")) return false;
+      if (bookmark.target?.kind === "image" && !markdownImages(item.text).some(image => image.key === (bookmark.target as { key: string }).key)) return false;
       const ids = [item.messageId, item.type === "user_message" ? item.clientMessageId : undefined].filter(Boolean);
       return ids.some((id) => id === bookmark.messageId || bookmark.aliases.includes(id!)) || (page.epoch === bookmark.epoch && entry.seqStart === bookmark.seq && summarize(item.text).startsWith(bookmark.summary.slice(0, 100)));
     };
@@ -202,6 +206,9 @@ export class BookmarkRuntime {
     }
     if (!target) throw new Error("BOOKMARKS_MESSAGE_UNAVAILABLE");
     const item = target.item;
+    if (item.type === "tool_call" && bookmark.target?.kind === "tool") {
+      return { ...bookmark, messageId: item.callId, seq: target.seqStart, epoch: page.epoch };
+    }
     if (item.type !== "user_message" && item.type !== "assistant_message") throw new Error("BOOKMARKS_MESSAGE_TYPE_CHANGED");
     const ids = [item.messageId, item.type === "user_message" ? item.clientMessageId : undefined, bookmark.messageId, ...bookmark.aliases].filter((id): id is string => Boolean(id));
     return { ...bookmark, messageId: item.messageId ?? bookmark.messageId, aliases: [...new Set(ids)].slice(0, 8), seq: target.seqStart, epoch: page.epoch };
@@ -209,6 +216,7 @@ export class BookmarkRuntime {
   async jump(bookmark: Bookmark, navigation = this.navigation) {
     if (this.snapshot.jumping || this.stopped) return;
     this.adapter?.syncContext();
+    this.adapter?.cancelJump();
     const request: JumpRequest = { origin: this.snapshot.active };
     this.pendingJump = request;
     const current = () => !this.stopped && this.pendingJump === request;
