@@ -22,7 +22,7 @@ test("registered labels follow the presenting app's live locale, with independen
       i18n: i18n.runtime,
       addWorkspacePanel(value: any) { registrations.panel = value; return () => {}; },
       addCommandCenterItem(value: any) { registrations.command = value; return () => {}; },
-      addHeaderButton: registration("header"), addComposerPill: registration("pill"),
+      addHeaderButton: registration("header"),
       paseo: { agents: { async list() { return { subscription: { release() {}, subscribe(listener: any) {
         listener.snapshot({ entries: [{ agent: { id: "agent-a", workspaceId: "workspace-a" } }], pageInfo: { hasMore: false } });
       } } }; } } },
@@ -39,7 +39,7 @@ test("registered labels follow the presenting app's live locale, with independen
     desktop.i18n.setLocale("en");
     assert.equal(desktop.i18n.runtime.resolve(labels.panel.title), "Bookmarks");
     assert.equal(desktop.i18n.runtime.resolve(labels.header.button.title), "Open conversation bookmarks");
-    assert.equal(desktop.i18n.runtime.resolve(labels.pill.button.label), "Bookmarks");
+    assert.equal(desktop.i18n.runtime.resolve(labels.header.button.label), "Bookmarks");
     desktop.i18n.setLocale("zh-CN");
     assert.equal(browser.i18n.runtime.resolve(browser.registrations.panel.title), "Bookmarks", "each app keeps its own language");
     desktop.i18n.setLocale("fr");
