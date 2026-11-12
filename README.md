@@ -12,7 +12,7 @@ Save messages, tool results and individual images in Paseo, then find them from 
 - Read short excerpts in the right-hand panel, ordered by conversation position.
 - Click an excerpt to return to the message and briefly highlight it. Remove bookmarks directly from the panel.
 - Find bookmarked turns through gold ticks on the left timeline.
-- Choose whether a forked conversation inherits the original bookmarks. Inherited bookmarks keep their source; removing one in the fork does not change the original.
+- Choose whether a forked conversation inherits the original bookmarks. If the source has no bookmarks, the prompt is skipped. Inherited bookmarks keep their source; removing one in the fork does not change the original.
 - Reopen a closed source conversation when following a bookmark. If the source was deleted, keep the excerpt and show an unavailable message.
 - Switch tabs or panes to cancel an earlier jump. With no conversation selected, the panel shows a selection prompt and keeps saved data intact.
 
@@ -33,7 +33,7 @@ paseo plugin add git:sylviaxiang424/paseo-bookmarks
 1. Hover over a message and click its bookmark icon. For answers it sits just below the leading divider; for questions it sits beside the bubble's upper-right corner. Saved icons stay gold.
 2. Click **Bookmarks** in the workspace header to open the right panel.
 3. Click an excerpt to jump, or the trash icon to remove it. Questions highlight only inside their bubble; answers highlight the full body width, excluding leading dividers and controls. Tool bookmarks expand the owning turn and result details; image bookmarks jump to the specific image.
-4. When branching into a new tab, choose **Inherit bookmarks** or **Do not inherit**.
+4. When branching into a new tab from a conversation with bookmarks, choose **Inherit bookmarks** or **Do not inherit**. No prompt appears when the source has none.
 
 ## Data and compatibility
 

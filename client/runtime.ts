@@ -139,8 +139,12 @@ export class BookmarkRuntime {
     try {
       const session = await this.load(fork.ownerId);
       if (this.stopped || session?.inheritance) return;
+      // Read the source afresh: a cached list can predate its last removal.
+      const source = await this.client.rpc(listBookmarks, { ownerId: fork.sourceAgentId });
+      if (this.stopped) return;
       // Modal entry is tied to the visible draft, not a newly created unrelated agent.
       if (this.snapshot.active?.ownerId !== fork.ownerId) { this.forkChecks.delete(fork.ownerId); return; }
+      if (!source.bookmarks.length) return;
       this.patch({ fork, forkOpen: true }); this.openPanel(fork.workspaceId);
     } catch (error) { this.forkChecks.delete(fork.ownerId); this.fail(error); }
   }
