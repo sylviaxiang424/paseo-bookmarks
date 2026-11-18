@@ -56,6 +56,7 @@ export class BookmarkRuntime {
     if (!this.started && !this.stopped) {
       this.started = true;
       this.adapter = createWebAdapter({
+        hostId: this.hostId,
         accepts: (context) => context.serverId === this.hostId,
         context: (context) => this.select(context),
         fork: (fork) => { if (fork.serverId === this.hostId) void this.detectFork(fork); },
@@ -177,6 +178,9 @@ export class BookmarkRuntime {
     if (!this.stopped) this.commit(agentId, session);
   }
   openPanel(workspaceId: string) { this.client.openPanel("bookmarks", { workspaceId, location: "explorer" }); }
+  togglePanel(workspaceId: string) {
+    if (!this.adapter?.closePanel(workspaceId)) this.openPanel(workspaceId);
+  }
   private async resolveTarget(bookmark: Bookmark, current: () => boolean): Promise<Bookmark | undefined> {
     const handle = this.client.paseo.agents.ref(bookmark.sourceAgentId);
     const source = await handle.refresh();

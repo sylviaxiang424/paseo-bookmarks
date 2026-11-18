@@ -31,7 +31,7 @@ paseo plugin add git:sylviaxiang424/paseo-bookmarks
 ## Use
 
 1. Hover over a message and click its bookmark icon. For answers it sits just below the leading divider; for questions it sits beside the bubble's upper-right corner. Saved icons stay gold.
-2. Click **Bookmarks** in the workspace header to open the right panel.
+2. Click **Bookmarks** in the workspace header to open the right panel. Click it again, or click the selected **Bookmarks** tab on the right, to collapse the panel. When another panel is selected, the button switches to Bookmarks.
 3. Click an excerpt to jump, or the trash icon to remove it. Questions highlight only inside their bubble; answers highlight the full body width, excluding leading dividers and controls. Tool bookmarks expand the owning turn and result details; image bookmarks jump to the specific image.
 4. When branching into a new tab from a conversation with bookmarks, choose **Inherit bookmarks** or **Do not inherit**. No prompt appears when the source has none.
 

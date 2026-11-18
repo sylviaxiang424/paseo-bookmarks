@@ -44,7 +44,7 @@ Object.assign(window, { layoutFixture: {
   get resizes() { return hostResizes; },
   async prepare() { scroll.scrollTop = Math.round(scroll.scrollHeight * 0.4); await frames(); return measure(); },
   async mount() {
-    adapter = createWebAdapter({ accepts: () => true, context() {}, fork() {}, bookmarks: () => bookmarks,
+    adapter = createWebAdapter({ hostId: context.serverId, accepts: () => true, context() {}, fork() {}, bookmarks: () => bookmarks,
       title: () => "Layout fixture", t: ((key: keyof typeof en) => en[key]) as any, error: message => { throw new Error(message); }, prompt() {},
       async toggle(_, target) {
         toggles++;

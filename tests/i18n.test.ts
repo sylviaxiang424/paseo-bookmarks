@@ -39,7 +39,7 @@ test("registered labels follow the presenting app's live locale, with independen
     assert.equal(desktop.i18n.runtime.resolve(labels.command.title), "打开对话书签");
     desktop.i18n.setLocale("en");
     assert.equal(desktop.i18n.runtime.resolve(labels.panel.title), "Bookmarks");
-    assert.equal(desktop.i18n.runtime.resolve(labels.header.button.title), "Open conversation bookmarks");
+    assert.equal(desktop.i18n.runtime.resolve(labels.header.button.title), "Open or collapse bookmarks panel");
     assert.equal(desktop.i18n.runtime.resolve(labels.header.button.label), "Bookmarks");
     desktop.i18n.setLocale("zh-CN");
     assert.equal(browser.i18n.runtime.resolve(browser.registrations.panel.title), "Bookmarks", "each app keeps its own language");

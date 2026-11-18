@@ -23,7 +23,7 @@ export default function contribute(client: PluginClientContext) {
     if (lifetime.signal.aborted || !agent.workspaceId) return;
     if ("title" in agent) runtime.setTitles([agent]);
     const workspaceId = agent.workspaceId;
-    if (!headers.has(workspaceId)) headers.set(workspaceId, client.addHeaderButton({ id: "bookmarks", workspaceId, button: { title: messages.message("open"), label: messages.message("bookmarks"), icon: Icon, behavior: { kind: "action", onPress: () => runtime.openPanel(workspaceId) } } }));
+    if (!headers.has(workspaceId)) headers.set(workspaceId, client.addHeaderButton({ id: "bookmarks", workspaceId, button: { title: messages.message("togglePanel"), label: messages.message("bookmarks"), icon: Icon, behavior: { kind: "action", onPress: () => runtime.togglePanel(workspaceId) } } }));
   }
   void client.paseo.agents.list({ subscribe: {}, signal: lifetime.signal }).then(({ subscription }) => {
     if (lifetime.signal.aborted) { void subscription.release(); return; }

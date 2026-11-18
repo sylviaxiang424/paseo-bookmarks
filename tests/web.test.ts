@@ -75,7 +75,7 @@ test("desktop adapter adds and removes bookmarks, marks the rail, jumps to unloa
   let saved: Bookmark[] = [], forks: any[] = [], selectedOwner = "";
   let adapter: any;
   const i18n = createTestI18n();
-  adapter = compiled.exports.createWebAdapter({ t: i18n.t, accepts: (ctx: any) => ctx.serverId === "host-a", context(value: any) { selectedOwner = value.ownerId; }, fork(value: any) { forks.push(value); }, bookmarks: () => saved, title: () => "原对话", error(message: string) { throw new Error(message); }, prompt(entries: Bookmark[]) { void adapter.jump(entries[0]); },
+  adapter = compiled.exports.createWebAdapter({ hostId: "host-a", t: i18n.t, accepts: (ctx: any) => ctx.serverId === "host-a", context(value: any) { selectedOwner = value.ownerId; }, fork(value: any) { forks.push(value); }, bookmarks: () => saved, title: () => "原对话", error(message: string) { throw new Error(message); }, prompt(entries: Bookmark[]) { void adapter.jump(entries[0]); },
     async toggle(_: unknown, target: BookmarkInput) {
       saved = saved.length ? [] : [{ ...target, id: bookmarkId(target), createdAt: new Date().toISOString() }];
       adapter.refresh();

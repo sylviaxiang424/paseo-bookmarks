@@ -11,7 +11,7 @@ type Bag = Record<string, unknown>;
 type Rect = { left: number; right: number; top: number; bottom: number; width: number; height: number };
 type Surface = { column: ElementLike; body: ElementLike; bubble?: ElementLike; markdown?: ElementLike };
 type TextNode = { textContent: string | null; parentElement: ElementLike | null };
-type WebEvent = { stopPropagation(): void; preventDefault(): void; key?: string; relatedTarget?: ElementLike | null };
+type WebEvent = { stopPropagation(): void; preventDefault(): void; key?: string; target?: ElementLike | null; relatedTarget?: ElementLike | null };
 type ElementLike = {
   [key: string]: unknown;
   parentElement: ElementLike | null;
@@ -31,6 +31,7 @@ type ElementLike = {
   matches(selector: string): boolean;
   contains(node: ElementLike): boolean;
   appendChild(child: ElementLike): unknown;
+  click(): void;
   remove(): void;
   scrollIntoView(options: { block: string; behavior: string }): void;
   addEventListener(name: string, handler: (event: WebEvent) => void, capture?: boolean): void;
@@ -45,8 +46,8 @@ type Browser = {
     createElementNS(namespace: string, tag: string): ElementLike;
     createTreeWalker(root: ElementLike, show: number): { nextNode(): TextNode | null };
     querySelectorAll(selector: string): ArrayLike<ElementLike>;
-    addEventListener(name: string, handler: () => void, capture?: boolean): void;
-    removeEventListener(name: string, handler: () => void, capture?: boolean): void;
+    addEventListener(name: string, handler: (event: WebEvent) => void, capture?: boolean): void;
+    removeEventListener(name: string, handler: (event: WebEvent) => void, capture?: boolean): void;
   };
   getComputedStyle(element: ElementLike): { backgroundColor: string; borderRadius: string };
   MutationObserver: new (callback: (records: Array<{ target: ElementLike }>) => void) => {
@@ -63,6 +64,7 @@ type Fiber = { return?: Fiber; child?: Fiber; sibling?: Fiber; memoizedProps?: u
 export type ChatContext = { serverId: string; workspaceId: string; ownerId: string; agentId?: string; draftId?: string; paneId?: string; focused?: boolean };
 export type ForkSource = ChatContext & { draftId: string; sourceAgentId: string };
 export type WebCallbacks = {
+  hostId: string;
   accepts(context: ChatContext): boolean;
   context(context: ChatContext | null): void;
   fork(source: ForkSource): void;
@@ -281,6 +283,38 @@ export function createWebAdapter(callbacks: WebCallbacks) {
   const browser = globalThis as unknown as Browser;
   if (!browser.document?.body || !browser.MutationObserver) return undefined;
   const document = browser.document;
+  // The SDK can open an Explorer panel but cannot close it. Identify our active
+  // native tab and use the host's own sidebar toggle; never cache visibility or
+  // close another host/workspace's panel. These controls exist from Paseo 0.13.
+  const selectedBookmarkWorkspace = (button: ElementLike) => {
+    if (!visible(button) || !button.matches('[data-testid^="workspace-tab-"][aria-selected="true"]') ||
+        !button.closest('[data-testid="workspace-explorer-sidebar"]')) return;
+    const props = ancestors(button).find(props => {
+      const target = bag(bag(props.tab).target);
+      return target.kind === "plugin" && target.pluginId === "paseo-bookmarks" && target.panelId === "bookmarks" &&
+        props.serverId === callbacks.hostId && typeof props.workspaceId === "string";
+    });
+    return props && string(props.workspaceId);
+  };
+  const panelCloseToggle = (workspaceId: string) => {
+    const selected = Array.from(document.querySelectorAll('[data-testid="workspace-explorer-sidebar"] [data-testid^="workspace-tab-"][aria-selected="true"]'))
+      .some(button => selectedBookmarkWorkspace(button) === workspaceId);
+    if (!selected) return;
+    return Array.from(document.querySelectorAll('[data-testid="workspace-explorer-toggle"][aria-expanded="true"]')).find(toggle =>
+      visible(toggle) && ancestors(toggle).some(props =>
+        (props.serverId ?? props.normalizedServerId) === callbacks.hostId &&
+        (props.workspaceId ?? props.normalizedWorkspaceId) === workspaceId));
+  };
+  const toggleSelectedPanel = (event: WebEvent) => {
+    // Only intercept clicks; the host owns keyboard gestures for tab dragging.
+    // A nested close/menu button keeps its native behavior.
+    const button = event.target?.closest?.('[role="button"]');
+    const workspaceId = button && selectedBookmarkWorkspace(button);
+    const toggle = workspaceId && panelCloseToggle(workspaceId);
+    if (!toggle) return;
+    event.preventDefault(); event.stopPropagation();
+    toggle.click();
+  };
   const actions = new Map<ElementLike, { toolbar: ElementLike; button: ElementLike; icon: ElementLike; enter: () => void; leave: (event: WebEvent) => void; target: BookmarkInput; context: ChatContext; row: ElementLike }>();
   const ticks = new Map<ElementLike, { title: string | null; click: (event: WebEvent) => void; entries: readonly Bookmark[] }>();
   let disposed = false, scheduled: ReturnType<typeof setTimeout> | undefined;
@@ -512,9 +546,16 @@ export function createWebAdapter(callbacks: WebCallbacks) {
   });
   observer.observe(document.body, { childList: true, subtree: true });
   document.addEventListener("scroll", requestLayout, true); browser.addEventListener?.("resize", requestLayout);
+  document.addEventListener("click", toggleSelectedPanel, true);
   const timer = setInterval(schedule, 700);
   scan();
   return {
+    closePanel(workspaceId: string) {
+      if (disposed) return false;
+      const toggle = panelCloseToggle(workspaceId);
+      if (!toggle) return false;
+      toggle.click(); return true;
+    },
     refresh: schedule,
     syncContext,
     cancelJump() { jumpVersion++; clearHighlight(); },
@@ -607,6 +648,7 @@ export function createWebAdapter(callbacks: WebCallbacks) {
       if (layoutFrame !== undefined) browser.cancelAnimationFrame?.(layoutFrame);
       if (layoutFallback !== undefined) clearTimeout(layoutFallback);
       resizeObserver?.disconnect(); document.removeEventListener("scroll", requestLayout, true); browser.removeEventListener?.("resize", requestLayout);
+      document.removeEventListener("click", toggleSelectedPanel, true);
       jumpVersion++;
       clearHighlight();
       for (const row of actions.keys()) clearAction(row);

@@ -43,7 +43,7 @@ async function fixture(run: (host: any) => Promise<void>) {
     scroll.append(row); return row;
   };
   const i18n = createTestI18n();
-  const adapter = factory.createWebAdapter({ t: i18n.t, accepts: (ctx: any) => ctx.serverId === "host-a", context() {}, bookmarks: () => [], fork() {}, title: () => "原对话", toggle: async () => {}, prompt() {}, error(message: string) { throw new Error(message); } });
+  const adapter = factory.createWebAdapter({ hostId: "host-a", t: i18n.t, accepts: (ctx: any) => ctx.serverId === "host-a", context() {}, bookmarks: () => [], fork() {}, title: () => "原对话", toggle: async () => {}, prompt() {}, error(message: string) { throw new Error(message); } });
   try { await run({ adapter, createScroll, addRow, later, window, scrolled: () => scrolled }); }
   finally { adapter.dispose(); i18n.runtime.dispose(); for (const timer of scheduled) clearTimeout(timer); Object.assign(globalThis, previous); await window.happyDOM.close(); }
 }

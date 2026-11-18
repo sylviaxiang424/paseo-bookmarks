@@ -2,6 +2,7 @@ export const en = {
   bookmarks: "Bookmarks",
   title: "Conversation bookmarks",
   open: "Open conversation bookmarks",
+  togglePanel: "Open or collapse bookmarks panel",
   add: "Add bookmark",
   remove: "Remove bookmark",
   image: "Image", command: "Command", tool: "Tool output",
@@ -48,7 +49,7 @@ export const en = {
 } as const;
 
 export const zhCN = {
-  bookmarks: "书签", title: "对话书签", open: "打开对话书签", add: "添加书签", remove: "移除书签",
+  bookmarks: "书签", title: "对话书签", open: "打开对话书签", togglePanel: "打开或收起书签面板", add: "添加书签", remove: "移除书签",
   image: "图片", command: "命令", tool: "工具输出",
   question: "问题", answer: "回答", untitled: "未命名对话", sourceConversation: "原对话",
   forkTitle: "继承原对话的书签？",
