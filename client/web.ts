@@ -3,7 +3,7 @@ import type { Translate } from "./messages";
 import { Platform } from "react-native";
 import { readableText, summarize, sameTarget, bookmarkLabel, type Bookmark, type BookmarkInput } from "../shared/bookmarks";
 
-// Paseo 0.15/0.16 has no message-action/outline-decoration API. Keep its desktop
+// Paseo 0.13–0.16 has no message-action/outline-decoration API. Keep its desktop
 // compatibility boundary here. Never replace a renderer or import host stores.
 // The host's own jump callback loads a window around the exact timeline seq,
 // including rows absent from the DOM. All metadata is checked before use.
