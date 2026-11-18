@@ -112,3 +112,22 @@ test("a tool hidden inside a folded multi-call turn opens its owning turn when g
   assert.equal(await adapter.jump({ ...target, messageId: "call-a", aliases: ["call-a"], promptSeq: 1, target: { kind: "tool", toolType: "command" } }), true);
   assert.deepEqual(revealed, [{ id: "prompt-1", expanded: true }]);
 }));
+
+for (const hasTurnId of [true, false]) test(`Paseo 0.16 standalone turn summaries expand their host, with turn IDs ${hasTurnId ? "present" : "absent"}`, () => fixture(async ({ adapter, createScroll, addRow, window }) => {
+  const scroll = createScroll();
+  const turn = { id: "turn-summary:prompt-1", kind: "turn_summary", hostId: "prompt-1", expanded: false,
+    ...(hasTurnId ? { turnId: "turn-a" } : {}), timelineCursor: { epoch: "epoch-a", seq: 1 } };
+  const summaryRow = addRow(scroll, turn.id);
+  summaryRow.__reactProps$test.children.props.item = turn;
+  const summary = window.document.createElement("div"); summary.setAttribute("data-testid", "turn-summary"); summaryRow.append(summary);
+  const tool = { id: "native-tool-row", kind: "tool_call", ...(hasTurnId ? { turnId: "turn-a" } : {}),
+    payload: { source: "agent", data: { callId: "call-a" } }, timelineCursor: { epoch: "epoch-a", seq: 9 } };
+  const revealed: any[] = [];
+  summary.__reactFiber$test = { memoizedProps: { item: turn, onExpandedChange(id: string, expanded: boolean) {
+    revealed.push({ id, expanded });
+    const row = addRow(scroll, tool.id); row.__reactProps$test.children.props.item = tool;
+  } } };
+  scroll.__reactFiber$test.return = { memoizedProps: { ...context, items: [tool], revealLoadedMessage() {}, viewportRef: { current: { scrollToMessage() {} } } } };
+  assert.equal(await adapter.jump({ ...target, messageId: "call-a", aliases: ["call-a"], promptSeq: 1, target: { kind: "tool", toolType: "command" } }), true);
+  assert.deepEqual(revealed, [{ id: "prompt-1", expanded: true }], "expand the original host, never the synthetic summary row ID");
+}));

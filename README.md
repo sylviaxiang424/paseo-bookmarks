@@ -20,7 +20,7 @@ Save messages, tool results and individual images in Paseo, then find them from 
 
 ## Install
 
-Requires Paseo **0.15.x** on desktop or web. The interface follows Paseo’s language setting, including “System”. English and Simplified Chinese are supported, with English as the fallback. Native mobile clients are not supported.
+Requires Paseo **0.15.x / 0.16.x** on desktop or web. The interface follows Paseo’s language setting, including “System”. English and Simplified Chinese are supported, with English as the fallback. Native mobile clients are not supported.
 
 Install directly from this repository:
 
@@ -39,7 +39,7 @@ paseo plugin add git:sylviaxiang424/paseo-bookmarks
 
 Bookmarks are stored on the connected daemon host at `$PASEO_HOME/plugin-data/paseo-bookmarks/bookmarks.json` (`~/.paseo` when `PASEO_HOME` is unset). They contain message and output identifiers, source information and a local text excerpt of up to 800 characters. Excerpts are not AI-generated. The plugin does not contact an external service or require an account or token. Uninstalling does not delete this data file.
 
-The panel and navigation use Paseo's plugin API. Message buttons, timeline marks and precise jumps also depend on a compatibility adapter for Paseo 0.15.x. They may need updates when Paseo changes. Jumps wait for history to load and retry once if needed; an inaccessible source or an incompatible host interface can still prevent navigation.
+The panel and navigation use Paseo's plugin API. Message buttons, timeline marks and precise jumps also depend on a compatibility adapter for Paseo 0.15.x / 0.16.x. They may need updates when Paseo changes. Jumps wait for history to load and retry once if needed; an inaccessible source or an incompatible host interface can still prevent navigation.
 
 ## Development
 

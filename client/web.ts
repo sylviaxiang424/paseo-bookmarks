@@ -3,7 +3,7 @@ import type { Translate } from "./messages";
 import { Platform } from "react-native";
 import { readableText, summarize, sameTarget, bookmarkLabel, type Bookmark, type BookmarkInput } from "../shared/bookmarks";
 
-// Paseo 0.15 has no message-action/outline-decoration API. Keep its desktop
+// Paseo 0.15/0.16 has no message-action/outline-decoration API. Keep its desktop
 // compatibility boundary here. Never replace a renderer or import host stores.
 // The host's own jump callback loads a window around the exact timeline seq,
 // including rows absent from the DOM. All metadata is checked before use.
@@ -148,9 +148,13 @@ function revealTurn(scroll: ElementLike, bookmark: Bookmark, loaded: Bag) {
     if (!row) continue;
     const item = rowItem(row), cursor = bag(item.timelineCursor);
     if (cursor.epoch !== bookmark.epoch || !(loaded.turnId ? item.turnId === loaded.turnId : cursor.seq === bookmark.promptSeq)) continue;
-    const props = ancestors(summary).find(props => bag(props.turn).hostId === item.id && typeof props.onExpandedChange === "function");
-    if (props && bag(props.turn).expanded === false) {
-      (props.onExpandedChange as (id: string, expanded: boolean) => void)(String(item.id), true);
+    // 0.15 nests the summary in its host; 0.16 renders a separate item whose
+    // hostId identifies the original prompt/tool, not the synthetic summary ID.
+    const hostId = string(item.kind === "turn_summary" ? item.hostId : item.id);
+    if (!hostId) continue;
+    const props = ancestors(summary).find(props => bag(props.turn ?? props.item).hostId === hostId && typeof props.onExpandedChange === "function");
+    if (props && bag(props.turn ?? props.item).expanded === false) {
+      (props.onExpandedChange as (id: string, expanded: boolean) => void)(hostId, true);
       return;
     }
   }
