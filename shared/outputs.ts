@@ -6,10 +6,12 @@ export function imageKey(source: string, occurrence: number): string {
   for (let i = 0; i < source.length; i++) hash = Math.imul(hash ^ source.charCodeAt(i), 16777619);
   return `${(hash >>> 0).toString(36)}:${occurrence}`;
 }
-export function markdownImages(text: string): MarkdownImage[] {
+function parseImages(text: string) {
   const images: MarkdownImage[] = [], counts = new Map<string, number>();
   // Ignore code examples; they do not create rendered images.
-  const source = text.replace(/```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`/g, "");
+  // Keep offsets so removing real image markup leaves code examples untouched.
+  const source = text.replace(/```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]*`/g, match => " ".repeat(match.length));
+  let remainder = "", end = 0;
   const references = new Map<string, string>();
   for (const match of source.matchAll(/^\s{0,3}\[([^\]]+)\]:\s*<?([^\s>]+)>?/gm)) references.set(match[1].toLowerCase(), match[2]);
   const pattern = /!\[((?:\\.|[^\]\\])*)\](?:\(\s*(?:<([^>]+)>|((?:\\.|[^\s()\\]|\([^()]*\))+))(?:\s+["'][^\n]*?["'])?\s*\)|\[([^\]]*)\])/g;
@@ -18,8 +20,19 @@ export function markdownImages(text: string): MarkdownImage[] {
     if (!uri) continue;
     const occurrence = counts.get(uri) ?? 0; counts.set(uri, occurrence + 1);
     images.push({ source: uri, alt: match[1].replace(/\\(.)/g, "$1"), key: imageKey(uri, occurrence) });
+    remainder += text.slice(end, match.index); end = match.index! + match[0].length;
   }
-  return images;
+  return { images, remainder: remainder + text.slice(end) };
+}
+export function markdownImages(text: string): MarkdownImage[] {
+  return parseImages(text).images;
+}
+export function isImageOnlyMessage(text: string): boolean {
+  const { images, remainder } = parseImages(text);
+  return images.length > 0 && !remainder
+    .replace(/^[ \t]{0,3}\[[^\]]+\]:[^\r\n]*(?:\r?\n|$)/gm, "")
+    .replace(/^[ \t]{0,3}(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})\r?$/gm, "")
+    .trim();
 }
 
 type Detail = Record<string, unknown>;

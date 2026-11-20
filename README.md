@@ -9,6 +9,7 @@ Save messages, tool results and individual images in Paseo, then find them from 
 ## Features
 
 - Bookmark a question, answer, individual command execution, tool result or image. A command and its output are saved together; each image can be saved separately.
+- Image-only replies show one bookmark control per picture. Replies with text keep separate answer and image controls.
 - Read short excerpts in the right-hand panel, ordered by conversation position.
 - Click an excerpt to return to the message and briefly highlight it. Remove bookmarks directly from the panel.
 - Find bookmarked turns through gold ticks on the left timeline.

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { imageKey, markdownImages, toolSummary } from "../shared/outputs";
+import { imageKey, markdownImages, isImageOnlyMessage, toolSummary } from "../shared/outputs";
 import { sameTarget, bookmarkId, type BookmarkInput } from "../shared/bookmarks";
 
 const base: BookmarkInput = { sourceAgentId: "a", sourceWorkspaceId: "w", sourceTitle: "", messageId: "parent", aliases: ["parent", "row"], role: "assistant", seq: 2, epoch: "e", promptSeq: 1, summary: "text", timestamp: "2026-11-10" };
@@ -24,6 +24,11 @@ test("sibling pictures and the parent answer toggle independently even with iden
   assert.equal(sameTarget(first, { ...first, messageId: "row" }), true);
   assert.equal(new Set([base, first, second].map(bookmarkId)).size, 3);
   assert.equal(bookmarkId(base), '["a","parent"]', "old bookmark IDs are unchanged");
+});
+
+test("image-only detection excludes captions and code but accepts reference images and separators", () => {
+  for (const text of ['\n![Image](file:///tmp/a.png)\n', '![](a.png)', '![A](a.png)\n![B](b.png)', '---\n![Image][ref]\n[ref]: <a.png> "title"\n']) assert.equal(isImageOnlyMessage(text), true, text);
+  for (const text of ['', '![unfinished](', 'Description\n![Image](a.png)', '![Image](a.png)\nCaption', '```md\n![fake](fake.png)\n```\n![real](real.png)', '`example`\n![real](real.png)']) assert.equal(isImageOnlyMessage(text), false, text);
 });
 
 test("tool summaries preserve command punctuation and include execution or structured results", () => {

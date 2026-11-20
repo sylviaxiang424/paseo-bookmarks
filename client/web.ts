@@ -1,4 +1,4 @@
-import { imageKey, markdownImages, toolSummary } from "../shared/outputs";
+import { imageKey, markdownImages, isImageOnlyMessage, toolSummary } from "../shared/outputs";
 import type { Translate } from "./messages";
 import { Platform } from "react-native";
 import { readableText, summarize, sameTarget, bookmarkLabel, type Bookmark, type BookmarkInput } from "../shared/bookmarks";
@@ -173,7 +173,7 @@ function matchesTarget(item: Bag, bookmark: Bookmark, rowId?: string | null): bo
   const text = string(item.text) ?? string(data.messageText) ?? string(data.text);
   return cursor.epoch === bookmark.epoch && cursor.seq === bookmark.seq && role === bookmark.role && Boolean(text && bookmark.summary && summarize(text).startsWith(bookmark.summary.slice(0, 100)));
 }
-function describe(row: ElementLike, context: ChatContext, promptSeqs: number[], title: string): BookmarkInput | undefined {
+function describe(row: ElementLike, context: ChatContext, promptSeqs: number[], title: string, t: Translate): BookmarkInput | undefined {
   const item = rowItem(row), data = bag(item.data), cursor = bag(item.timelineCursor), tool = bag(bag(item.payload).data);
   const kind = item.kind === "plugin" ? string(item.itemKind) ?? "" : string(item.kind) ?? "";
   const isTool = kind === "tool_call" && bag(item.payload).source === "agent" && string(tool.callId);
@@ -182,7 +182,7 @@ function describe(row: ElementLike, context: ChatContext, promptSeqs: number[], 
   const seq = cursor.seq, epoch = string(cursor.epoch);
   const aliases = [...new Set([isTool ? tool.callId : undefined, row.getAttribute("data-message-id"), item.messageId, item.clientMessageId, item.sourceId, data.messageId, data.clientMessageId].filter((value): value is string => typeof value === "string" && value.length > 0))];
   if (!context.agentId || !role || (!isTool && !text) || typeof seq !== "number" || !epoch || !aliases.length) return;
-  const summary = isTool ? toolSummary(string(tool.name) ?? "Tool", bag(tool.detail)) : summarize(text!);
+  const summary = isTool ? toolSummary(string(tool.name) ?? "Tool", bag(tool.detail)) : summarize(text!) || (markdownImages(text!).length ? t("image") : "");
   if (!summary) return;
   const timestamp = item.timestamp instanceof Date ? item.timestamp.toISOString() : string(item.timestamp) ?? new Date().toISOString();
   return { sourceAgentId: context.agentId, sourceWorkspaceId: context.workspaceId, sourceTitle: title.slice(0, 240), messageId: isTool ? String(tool.callId) : string(item.messageId) ?? string(data.messageId) ?? aliases[0], aliases: aliases.slice(0, 8), role, seq, epoch, promptSeq: promptSeqs.filter((value) => value <= seq).pop() ?? seq, summary, timestamp,
@@ -396,7 +396,7 @@ export function createWebAdapter(callbacks: WebCallbacks) {
       }
       const anchor = action.target.role === "assistant" && !action.target.target ? surface.column.getBoundingClientRect().right : bounds.right;
       const x = Math.max(left, Math.min(anchor + 8, right - buttonWidth));
-      // Image-only answers can share their first image's top edge. Keep the
+      // Mixed answers can share their first image's top edge. Keep their
       // whole-answer and individual-image controls apart in the existing gutter.
       if (action.target.target?.kind === "image") for (const previous of placed) {
         if (x < previous.x + previous.width && x + buttonWidth > previous.x && y < previous.y + 24 && y + 24 > previous.y) y = previous.y + 28;
@@ -478,10 +478,16 @@ export function createWebAdapter(callbacks: WebCallbacks) {
       const saved = callbacks.bookmarks(current);
       const seenMessages = new Set<string>();
       for (const row of Array.from(scroll.querySelectorAll("[data-history-row-id][data-message-id]"))) {
-        const target = describe(row, current, promptSeqs, callbacks.title(current.agentId));
+        const target = describe(row, current, promptSeqs, callbacks.title(current.agentId), callbacks.t);
         if (!target || seenMessages.has(target.messageId)) continue;
         seenMessages.add(target.messageId);
-        const entries = [{ anchor: row, target }, ...(!target.target ? imageTargets(row).map(image => ({ anchor: image.node, target: { ...target, target: { kind: "image", key: image.key } as const, summary: summarize(image.alt) || callbacks.t("image") } })) : [])];
+        const pictures = !target.target ? imageTargets(row) : [];
+        const item = rowItem(row), data = bag(item.data);
+        const text = string(item.text) ?? string(data.messageText) ?? string(data.text) ?? "";
+        // A screenshot-only reply has no separate prose to bookmark. Keep one
+        // entry per rendered image; retain the answer entry until images mount.
+        const imageOnly = target.role === "assistant" && pictures.length > 0 && isImageOnlyMessage(text);
+        const entries = [...(imageOnly ? [] : [{ anchor: row, target }]), ...pictures.map(image => ({ anchor: image.node, target: { ...target, target: { kind: "image", key: image.key } as const, summary: summarize(image.alt) || callbacks.t("image") } }))];
         for (const { anchor, target } of entries) {
           seenRows.add(anchor);
           let action = actions.get(anchor);
